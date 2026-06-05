@@ -221,8 +221,8 @@ class EmailService:
             logger.info(f"[邮件模拟] 至 {to_email}: {subject}")
             return True
 
-        if not self.config.get('username') or self.config['username'] == 'your_email@qq.com':
-            logger.warning("SMTP未配置，跳过真实邮件发送")
+        if not self.config.get('username') or not self.config.get('password'):
+            logger.warning("SMTP未配置（账号或授权码为空），跳过真实邮件发送")
             logger.info(f"[邮件模拟] 至 {to_email}: {subject}")
             return True
 
@@ -274,13 +274,13 @@ class EmailService:
             logger.info("[邮件测试] 真实邮件模式未启用，已跳过")
             return False, "真实邮件模式未启用，请在settings.py中设置 use_real_email=True"
 
-        if not self.config.get('username') or self.config['username'] == 'your_email@qq.com':
-            msg = "SMTP未配置：请在 config/settings.py 的 EMAIL_CONFIG 中填入您的QQ邮箱账号和SMTP授权码"
+        if not self.config.get('username'):
+            msg = "SMTP未配置：请在「系统设置 → 邮件配置」中填入您的QQ邮箱账号"
             logger.warning("[邮件测试] " + msg)
             return False, msg
 
-        if not self.config.get('password') or self.config['password'] == 'your_smtp_auth_code':
-            msg = "SMTP授权码未配置：请在 config/settings.py 的 EMAIL_CONFIG.password 中填入QQ邮箱SMTP授权码"
+        if not self.config.get('password'):
+            msg = "SMTP授权码未配置：请在「系统设置 → 邮件配置」中填入QQ邮箱SMTP授权码"
             logger.warning("[邮件测试] " + msg)
             return False, msg
 

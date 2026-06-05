@@ -56,6 +56,12 @@
           <span class="nav-icon">▤</span>操作日志
         </a>
       </div>
+      <div class="nav-section">
+        <div class="nav-section-title">系统</div>
+        <a href="{{ url_for('settings_email') }}" class="nav-item {% if active_page == 'settings' %}active{% endif %}">
+          <span class="nav-icon">⚙</span>系统设置
+        </a>
+      </div>
     </nav>
     <div class="sidebar-footer">
       <div class="system-status">

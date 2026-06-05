@@ -151,7 +151,8 @@ class InventoryManager:
     def get_monthly_budget_usage(self):
         """
         查询本月已使用预算金额
-        统计维度：已通过审批的采购申请 + 已生成采购订单的金额
+        统计维度：已通过审批/待审批的采购申请 + 已生成采购订单的金额
+        排除：approval_status='rejected' 或 status='rejected' 的驳回记录
         :return: float 本月已使用金额
         """
         with get_db_cursor() as cursor:
@@ -160,6 +161,8 @@ class InventoryManager:
                 FROM purchase_requisitions
                 WHERE approval_status IN ('approved', 'needs_approval', 'pending')
                 AND status IN ('pending', 'processing', 'completed')
+                AND approval_status != 'rejected'
+                AND status != 'rejected'
                 AND created_at >= date('now', 'start of month')
             """)
             req_total = safe_float(cursor.fetchone()['req_total'])
@@ -167,7 +170,7 @@ class InventoryManager:
             cursor.execute("""
                 SELECT COALESCE(SUM(total_amount), 0) as po_total
                 FROM purchase_orders
-                WHERE status != 'cancelled'
+                WHERE status NOT IN ('cancelled', 'rejected')
                 AND created_at >= date('now', 'start of month')
             """)
             po_total = safe_float(cursor.fetchone()['po_total'])

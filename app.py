@@ -584,7 +584,85 @@ def create_app():
                                purchase_orders=purchase_orders,
                                active_page='suppliers')
 
+    @app.route('/settings/email', methods=['GET'])
+    def settings_email():
+        from config.settings import EMAIL_CONFIG
+        return render_template('settings/email.html',
+                               email_config=EMAIL_CONFIG,
+                               notification_config=NOTIFICATION_CONFIG,
+                               active_page='settings')
+
+    @app.route('/settings/email/save', methods=['POST'])
+    def api_settings_email_save():
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '').strip()
+        admin_email = request.form.get('admin_email', '').strip()
+        send_test = request.form.get('send_test') == '1'
+
+        if not username:
+            return jsonify({'success': False, 'message': 'QQ邮箱账号不能为空'})
+        if not password:
+            return jsonify({'success': False, 'message': 'SMTP授权码不能为空'})
+
+        ok = save_email_config(username, password, admin_email or None)
+        if not ok:
+            return jsonify({'success': False, 'message': '保存配置失败，请检查文件权限'})
+
+        test_result = None
+        if send_test:
+            test_ok, test_msg = email_service.send_test_email(admin_email or None)
+            test_result = {'success': test_ok, 'message': test_msg}
+
+        return jsonify({
+            'success': True,
+            'message': '邮件配置已保存',
+            'test_result': test_result
+        })
+
     return app
+
+
+def save_email_config(username, password, admin_email=None):
+    """将邮件配置保存到settings.py文件"""
+    import re
+    settings_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config', 'settings.py')
+    try:
+        with open(settings_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        content = re.sub(
+            r"'username':\s*'.*?'",
+            f"'username': '{username}'",
+            content, count=1
+        )
+        content = re.sub(
+            r"'password':\s*'.*?'",
+            f"'password': '{password}'",
+            content, count=1
+        )
+        if admin_email:
+            content = re.sub(
+                r"'admin_email':\s*'.*?'",
+                f"'admin_email': '{admin_email}'",
+                content, count=1
+            )
+
+        with open(settings_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+        from config import settings as _settings
+        _settings.EMAIL_CONFIG['username'] = username
+        _settings.EMAIL_CONFIG['password'] = password
+        if admin_email:
+            _settings.NOTIFICATION_CONFIG['admin_email'] = admin_email
+
+        email_service.config['username'] = username
+        email_service.config['password'] = password
+
+        return True
+    except Exception as e:
+        logger.error(f"保存邮件配置失败: {e}")
+        return False
 
 
 def main():
@@ -607,17 +685,21 @@ def main():
     print("  邮件配置说明:")
     print(f"    当前状态: {'真实邮件模式' if NOTIFICATION_CONFIG.get('use_real_email') else '模拟模式'}")
     from config.settings import EMAIL_CONFIG
-    if EMAIL_CONFIG.get('username') and EMAIL_CONFIG['username'] != 'your_email@qq.com':
+    has_user = bool(EMAIL_CONFIG.get('username'))
+    has_pwd = bool(EMAIL_CONFIG.get('password'))
+    if has_user:
         print(f"    发件账号: {EMAIL_CONFIG['username']}")
     else:
-        print("    ⚠️  发件账号未配置! 请编辑 config/settings.py 中 EMAIL_CONFIG.username")
-    if EMAIL_CONFIG.get('password') and EMAIL_CONFIG['password'] != 'your_smtp_auth_code':
+        print("    ⚠️  发件账号未配置")
+    if has_pwd:
         print("    SMTP授权码: 已配置 ✓")
     else:
-        print("    ⚠️  SMTP授权码未配置! 请编辑 config/settings.py 中 EMAIL_CONFIG.password")
+        print("    ⚠️  SMTP授权码未配置")
+    if not (has_user and has_pwd):
+        print("    💡 请在Web界面「系统设置 → 邮件配置」中填写QQ邮箱和授权码")
     print()
 
-    if NOTIFICATION_CONFIG.get('use_real_email'):
+    if NOTIFICATION_CONFIG.get('use_real_email') and has_user and has_pwd:
         print("  📧 正在发送启动测试邮件...")
         test_ok, test_msg = email_service.send_test_email()
         if test_ok:
@@ -625,6 +707,9 @@ def main():
         else:
             print(f"    ✗ {test_msg}")
             print("    提示: 点击Web界面右上角「测试邮件」按钮可随时重试")
+        print()
+    elif NOTIFICATION_CONFIG.get('use_real_email'):
+        print("  ℹ️  邮件配置不完整，已跳过启动测试邮件发送")
         print()
 
     print("  按 Ctrl+C 停止服务器")

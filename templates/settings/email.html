@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}邮件配置 - 系统设置{% endblock %}
+{% block header_title %}系统设置{% endblock %}
+{% block header_sub %}Email Configuration{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h2>📧 邮件通知配置</h2>
+  <p style="color: var(--text-dim); margin-top: 6px;">
+    配置QQ邮箱SMTP服务后，系统可自动发送工单升级、库存预警、采购审批、日报等通知邮件
+  </p>
+</div>
+
+<div class="card" style="max-width: 680px;">
+  <div class="card-header">
+    <h3>SMTP 参数配置</h3>
+  </div>
+  <div class="card-body">
+    <div style="background: var(--bg-secondary); padding: 16px; border-radius: 8px; margin-bottom: 24px; border-left: 4px solid var(--cyan-primary);">
+      <div style="font-weight: bold; margin-bottom: 8px;">💡 QQ邮箱授权码获取步骤</div>
+      <ol style="color: var(--text-dim); margin: 0; padding-left: 20px; line-height: 1.8;">
+        <li>登录 QQ 邮箱网页版：<a href="https://mail.qq.com" target="_blank" style="color: var(--cyan-primary);">mail.qq.com</a></li>
+        <li>点击顶部「设置」→「账户」选项卡</li>
+        <li>向下滚动找到「POP3/IMAP/SMTP/Exchange/CardDAV/CalDAV服务」</li>
+        <li>开启「POP3/SMTP服务」，按提示用绑定手机发送验证短信</li>
+        <li>短信发送成功后，复制显示的 16 位<strong style="color: var(--cyan-primary);">授权码</strong>填入下方</li>
+      </ol>
+    </div>
+
+    <form id="emailConfigForm">
+      <div class="form-group">
+        <label>SMTP 服务器</label>
+        <input type="text" value="{{ email_config.smtp_server }}:{{ email_config.smtp_port }}" disabled class="form-input" style="background: var(--bg-secondary); color: var(--text-dim);">
+        <div class="form-hint">QQ邮箱固定，无需修改</div>
+      </div>
+
+      <div class="form-group">
+        <label>QQ 邮箱账号 <span style="color: var(--orange-alert);">*</span></label>
+        <input type="email" name="username" id="email_username" 
+               value="{{ email_config.username if email_config.username else '' }}"
+               placeholder="例如: 123456789@qq.com" class="form-input" required>
+      </div>
+
+      <div class="form-group">
+        <label>SMTP 授权码 <span style="color: var(--orange-alert);">*</span></label>
+        <input type="password" name="password" id="email_password" 
+               value="{{ email_config.password if email_config.password else '' }}"
+               placeholder="16位授权码（非QQ登录密码）" class="form-input" required>
+        <div class="form-hint">不是QQ登录密码，是上面步骤获取的授权码</div>
+      </div>
+
+      <div class="form-group">
+        <label>管理员收件邮箱</label>
+        <input type="email" name="admin_email" id="admin_email" 
+               value="{{ notification_config.admin_email }}"
+               placeholder="测试邮件和重要通知收件人" class="form-input">
+        <div class="form-hint">留空则默认发件给发件账号自身</div>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 28px;">
+        <label class="checkbox">
+          <input type="checkbox" name="send_test" value="1" checked id="send_test_chk">
+          <span>保存后立即发送一封测试邮件验证配置</span>
+        </label>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn btn-primary" id="saveBtn" onclick="saveEmailConfig()">
+          <span>💾</span> 保存配置
+        </button>
+        <button type="button" class="btn" onclick="sendStandaloneTest()">
+          <span>✉️</span> 仅发送测试邮件
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+.form-group { margin-bottom: 20px; }
+.form-group label { display: block; margin-bottom: 8px; font-weight: 600; color: var(--text-primary); }
+.form-input {
+  width: 100%; padding: 10px 14px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+.form-input:focus { outline: none; border-color: var(--cyan-primary); box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.15); }
+.form-hint { font-size: 12px; color: var(--text-dim); margin-top: 6px; }
+.checkbox { display: flex; align-items: center; gap: 10px; cursor: pointer; font-weight: 500; }
+.checkbox input { width: 18px; height: 18px; cursor: pointer; }
+.form-actions { display: flex; gap: 12px; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function saveEmailConfig() {
+  const btn = document.getElementById('saveBtn');
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<span class="loading-spinner"></span> 保存中...';
+  btn.disabled = true;
+
+  const data = {
+    username: document.getElementById('email_username').value.trim(),
+    password: document.getElementById('email_password').value.trim(),
+    admin_email: document.getElementById('admin_email').value.trim(),
+    send_test: document.getElementById('send_test_chk').checked ? '1' : '0'
+  };
+
+  apiPost('/settings/email/save', data, (d) => {
+    btn.innerHTML = orig;
+    btn.disabled = false;
+    if (d.success) {
+      let msg = `<p style="color: var(--cyan-primary);">✓ ${d.message}</p>`;
+      if (d.test_result) {
+        if (d.test_result.success) {
+          msg += `<p style="margin-top: 10px; color: var(--success, #10b981);">✓ 测试邮件: ${d.test_result.message}</p>`;
+        } else {
+          msg += `<p style="margin-top: 10px; color: var(--orange-alert);">✗ 测试邮件: ${d.test_result.message}</p>`;
+        }
+      }
+      showModal('保存成功', msg);
+    } else {
+      showModal('保存失败', `<p style="color: var(--orange-alert);">✗ ${d.message}</p>`);
+    }
+  });
+}
+
+function sendStandaloneTest() {
+  sendTestEmail();
+}
+</script>
+{% endblock %}
