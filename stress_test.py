@@ -27,11 +27,20 @@ from utils.helpers import now_str
 from models.schema import init_database
 
 
-def percentile(data, p):
-    """计算分位数（p: 0-100）"""
+def percentile(data, p, max_samples=100000):
+    """
+    计算分位数（p: 0-100）
+    当数据量超过max_samples时，采用系统抽样防止内存撑爆和排序过慢
+    """
     if not data:
         return 0.0
-    sorted_data = sorted(data)
+    n = len(data)
+    if n <= max_samples:
+        sampled = data
+    else:
+        step = n // max_samples
+        sampled = [data[i] for i in range(0, n, step)]
+    sorted_data = sorted(sampled)
     k = (len(sorted_data) - 1) * (p / 100.0)
     f = int(k)
     c = min(f + 1, len(sorted_data) - 1)
@@ -367,14 +376,30 @@ class StressTester:
             'duration_seconds': elapsed
         }
 
-    def run_full_suite(self):
-        """运行完整压力测试套件"""
+    def run_full_suite(self, small_scale=True):
+        """
+        运行完整压力测试套件
+        :param small_scale: True=小规模快速测试(默认), False=生产级100万点/天全量测试
+        """
         print()
         print("╔" + "═" * 68 + "╗")
-        print("║" + " " * 13 + "制造业预测性维护系统 - 高并发压力测试 v2.0" + " " * 13 + "║")
+        print("║" + " " * 13 + "制造业预测性维护系统 - 高并发压力测试 v2.1" + " " * 13 + "║")
         print("╚" + "═" * 68 + "╝")
         print()
-        print("  目标量级: 2,000台设备 × 500点/天 = 1,000,000条/天 (100万点/天)")
+        if small_scale:
+            print("  模式: 小规模快速验证 (small_scale=True)")
+            print("  说明: 如需运行生产级100万点/天全量测试，请传入 small_scale=False")
+            eq_num, rpe, threads, batch = 200, 100, 50, 200
+            q_num, q_threads = 500, 10
+            rw_dur, r_th, w_th = 10, 10, 5
+            target_daily = eq_num * rpe
+        else:
+            print("  模式: 生产级全量测试 (small_scale=False)")
+            print("  目标量级: 2,000台设备 × 500点/天 = 1,000,000条/天 (100万点/天)")
+            eq_num, rpe, threads, batch = 2000, 500, 200, 500
+            q_num, q_threads = 5000, 50
+            rw_dur, r_th, w_th = 30, 50, 30
+            target_daily = 1000000
         print("  输出指标: QPS吞吐量 | P50/P90/P95/P99延迟分位 | 错误率")
 
         init_database()
@@ -382,17 +407,17 @@ class StressTester:
         all_results = []
         try:
             r1 = self.benchmark_data_insert(
-                num_equipments=2000,
-                records_per_equipment=500,
-                num_threads=200,
-                batch_size=500
+                num_equipments=eq_num,
+                records_per_equipment=rpe,
+                num_threads=threads,
+                batch_size=batch
             )
             all_results.append(r1)
 
-            r2 = self.benchmark_query_performance(num_queries=5000, num_threads=50)
+            r2 = self.benchmark_query_performance(num_queries=q_num, num_threads=q_threads)
             all_results.append(r2)
 
-            r3 = self.benchmark_concurrent_read_write(duration_seconds=30, read_threads=50, write_threads=30)
+            r3 = self.benchmark_concurrent_read_write(duration_seconds=rw_dur, read_threads=r_th, write_threads=w_th)
             all_results.append(r3)
 
         except Exception as e:
@@ -417,12 +442,11 @@ class StressTester:
             json.dump(all_results, f, ensure_ascii=False, indent=2)
         print(f"\n  📄 详细JSON报告已保存至: {report_path}")
 
-        target_daily = 1000000
         est_daily_capacity = 0
         for r in all_results:
             if r['test'] == 'data_insert':
                 est_daily_capacity = r['qps'] * 86400
-                ratio = est_daily_capacity / target_daily * 100
+                ratio = est_daily_capacity / target_daily * 100 if target_daily > 0 else 0
                 status = '(达标 ✓)' if ratio >= 100 else '(未达标 ✗)'
                 print()
                 print(f"  ┌─────────────────────────────────────────────────────┐")

@@ -145,27 +145,62 @@ class DailyReportGenerator:
             return False
 
     def export_pdf(self, stats, filepath):
-        """使用reportlab生成带表格的真正PDF日报"""
+        """使用reportlab生成带表格的真正PDF日报（已注册中文字体）"""
         try:
             from reportlab.lib.pagesizes import A4
             from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
             from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
             from reportlab.lib import colors
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.ttfonts import TTFont
         except ImportError as e:
             logger.error(f"导出PDF失败: reportlab未安装 - {e}")
             return False
 
         try:
+            font_candidates = [
+                ('/System/Library/Fonts/PingFang.ttc', 0, 'PingFangSC'),
+                ('/System/Library/Fonts/STHeiti Light.ttc', 0, 'STHeiti'),
+                ('/System/Library/Fonts/STHeiti Medium.ttc', 0, 'STHeitiMedium'),
+                ('/Library/Fonts/SimSun.ttf', 0, 'SimSun'),
+                ('/System/Library/Fonts/Hiragino Sans GB.ttc', 0, 'HiraginoSansGB'),
+            ]
+            registered_name = 'Helvetica'
+            for font_path, sub_idx, font_name in font_candidates:
+                if os.path.exists(font_path):
+                    try:
+                        if font_path.lower().endswith('.ttc'):
+                            pdfmetrics.registerFont(TTFont(font_name, font_path, subfontIndex=sub_idx))
+                        else:
+                            pdfmetrics.registerFont(TTFont(font_name, font_path))
+                        registered_name = font_name
+                        logger.debug(f"PDF中文字体已注册: {font_name} <- {font_path}")
+                        break
+                    except Exception as fe:
+                        logger.debug(f"尝试注册字体 {font_path} 失败: {fe}")
+                        continue
+
             doc = SimpleDocTemplate(filepath, pagesize=A4)
             styles = getSampleStyleSheet()
             elements = []
 
             title_style = ParagraphStyle('DailyTitle', parent=styles['Heading1'],
+                                         fontName=registered_name,
                                          fontSize=18, textColor=colors.HexColor('#0066FF'),
                                          alignment=1, spaceAfter=6)
             subtitle_style = ParagraphStyle('DailySubtitle', parent=styles['Normal'],
+                                            fontName=registered_name,
                                             fontSize=10, textColor=colors.gray,
                                             alignment=1, spaceAfter=20)
+            normal_style = ParagraphStyle('DailyNormal', parent=styles['Normal'],
+                                          fontName=registered_name, fontSize=10)
+            heading_style = ParagraphStyle('DailyH2', parent=styles['Heading2'],
+                                           fontName=registered_name, fontSize=13,
+                                           textColor=colors.HexColor('#0A1628'),
+                                           spaceBefore=8, spaceAfter=10)
+            footer_style = ParagraphStyle('Footer', parent=styles['Normal'],
+                                          fontName=registered_name,
+                                          fontSize=8, textColor=colors.gray, alignment=1)
 
             elements.append(Paragraph("制造业设备预测性维护与备件管理日报", title_style))
             elements.append(Paragraph(f"报告日期: {stats['report_date']}  |  生成时间: {now_str()}", subtitle_style))
@@ -192,12 +227,12 @@ class DailyReportGenerator:
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
                 ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
                 ('ALIGN', (1, 1), (-1, -1), 'RIGHT'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTNAME', (0, 0), (-1, -1), registered_name),
                 ('FONTSIZE', (0, 0), (-1, 0), 11),
                 ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
                 ('TOPPADDING', (0, 0), (-1, 0), 10),
                 ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#D0D0D0')),
-                ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 1), (-1, -1), 10),
             ]
             for i in range(1, len(summary_data)):
                 if i % 2 == 0:
@@ -216,7 +251,7 @@ class DailyReportGenerator:
                 work_orders = [dict(r) for r in cursor.fetchall()]
 
             if work_orders:
-                elements.append(Paragraph("今日工单 (Top 15)", styles['Heading2']))
+                elements.append(Paragraph("今日工单 (Top 15)", heading_style))
                 wo_header = ['工单号', '标题', '优先级', '状态']
                 wo_data = [wo_header]
                 for wo in work_orders:
@@ -230,8 +265,8 @@ class DailyReportGenerator:
                 wo_style = [
                     ('BACKGROUND', (0, 0), (-1, 0), header_color),
                     ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                    ('FONTSIZE', (0, 0), (-1, -1), 8),
+                    ('FONTNAME', (0, 0), (-1, -1), registered_name),
+                    ('FONTSIZE', (0, 0), (-1, -1), 9),
                     ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor('#D0D0D0')),
                 ]
                 for i in range(1, len(wo_data)):
@@ -251,7 +286,7 @@ class DailyReportGenerator:
                 low_stock = [dict(r) for r in cursor.fetchall()]
 
             if low_stock:
-                elements.append(Paragraph("低库存备件预警 (Top 15)", styles['Heading2']))
+                elements.append(Paragraph("低库存备件预警 (Top 15)", heading_style))
                 ls_header = ['备件编码', '备件名称', '当前库存', '安全库存']
                 ls_data = [ls_header]
                 for part in low_stock:
@@ -265,8 +300,8 @@ class DailyReportGenerator:
                 ls_style = [
                     ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#D97706')),
                     ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                    ('FONTSIZE', (0, 0), (-1, -1), 8),
+                    ('FONTNAME', (0, 0), (-1, -1), registered_name),
+                    ('FONTSIZE', (0, 0), (-1, -1), 9),
                     ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor('#D0D0D0')),
                 ]
                 for i in range(1, len(ls_data)):
@@ -276,8 +311,6 @@ class DailyReportGenerator:
                 elements.append(ls_table)
 
             elements.append(Spacer(1, 30))
-            footer_style = ParagraphStyle('Footer', parent=styles['Normal'],
-                                          fontSize=8, textColor=colors.gray, alignment=1)
             elements.append(Paragraph(f"本报告由制造业预测性维护系统自动生成 · {now_str()}", footer_style))
 
             doc.build(elements)
@@ -388,15 +421,10 @@ class DailyReportGenerator:
         logger.info(f"开始生成 {report_date} 日报...")
 
         stats = self._collect_daily_stats(report_date)
-        report_content = self._generate_text_report(stats)
 
         base_name = f'daily_report_{report_date}'
-        txt_path = os.path.join(self.output_dir, f'{base_name}.txt')
         pdf_path = os.path.join(self.output_dir, f'{base_name}.pdf')
         excel_path = os.path.join(self.output_dir, f'{base_name}.xlsx')
-
-        with open(txt_path, 'w', encoding='utf-8') as f:
-            f.write(report_content)
 
         self.export_excel(stats, excel_path)
         self.export_pdf(stats, pdf_path)
@@ -407,15 +435,15 @@ class DailyReportGenerator:
                     INSERT OR REPLACE INTO daily_reports
                     (report_date, total_equipments, active_equipments, fault_count, fault_rate,
                      avg_repair_time_hours, total_maintenance_cost, high_risk_equipments,
-                     pending_work_orders, completed_work_orders, low_stock_items, report_path,
+                     pending_work_orders, completed_work_orders, low_stock_items,
                      report_path_pdf, report_path_excel)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     report_date, stats['total_equipments'], stats['active_equipments'],
                     stats['fault_count'], stats['fault_rate'], stats['avg_repair_time_hours'],
                     stats['total_maintenance_cost'], stats['high_risk_equipments'],
                     stats['pending_work_orders'], stats['completed_work_orders'],
-                    stats['low_stock_items'], txt_path, pdf_path, excel_path
+                    stats['low_stock_items'], pdf_path, excel_path
                 ))
         except Exception as e:
             logger.error(f"保存日报记录失败: {e}")
@@ -427,8 +455,8 @@ class DailyReportGenerator:
             f'生成 {report_date} 日报, 故障率 {stats["fault_rate"]:.2f}%, 维护成本 ¥{stats["total_maintenance_cost"]:.2f}'
         )
 
-        logger.info(f"日报已生成: TXT={txt_path}, PDF={pdf_path}, Excel={excel_path}")
-        return stats, txt_path, pdf_path, excel_path
+        logger.info(f"日报已生成: PDF={pdf_path}, Excel={excel_path}")
+        return stats, pdf_path, excel_path
 
     def get_recent_reports(self, days=7):
         with get_db_cursor() as cursor:

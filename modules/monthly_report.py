@@ -241,14 +241,49 @@ class MonthlyReportGenerator:
                 logger.error(f"导出月报PDF失败: reportlab未安装 - {e}")
                 return False
 
+            font_candidates = [
+                ('/System/Library/Fonts/PingFang.ttc', 0, 'PingFangSC'),
+                ('/System/Library/Fonts/STHeiti Light.ttc', 0, 'STHeiti'),
+                ('/System/Library/Fonts/STHeiti Medium.ttc', 0, 'STHeitiMedium'),
+                ('/Library/Fonts/SimSun.ttf', 0, 'SimSun'),
+                ('/System/Library/Fonts/Hiragino Sans GB.ttc', 0, 'HiraginoSansGB'),
+            ]
+            registered_name = 'Helvetica'
+            for font_path, sub_idx, font_name in font_candidates:
+                if os.path.exists(font_path):
+                    try:
+                        if font_path.lower().endswith('.ttc'):
+                            pdfmetrics.registerFont(TTFont(font_name, font_path, subfontIndex=sub_idx))
+                        else:
+                            pdfmetrics.registerFont(TTFont(font_name, font_path))
+                        registered_name = font_name
+                        logger.debug(f"月报PDF中文字体已注册: {font_name} <- {font_path}")
+                        break
+                    except Exception as fe:
+                        logger.debug(f"尝试注册字体 {font_path} 失败: {fe}")
+                        continue
+
             doc = SimpleDocTemplate(filepath, pagesize=A4)
             styles = getSampleStyleSheet()
             elements = []
 
-            title_style = ParagraphStyle('CustomTitle', parent=styles['Heading1'], fontSize=18, alignment=1)
-            elements.append(Paragraph(f"设备生命周期成本分析月度报告", title_style))
-            elements.append(Paragraph(f"报告周期: {stats['report_month']}", styles['Heading2']))
-            elements.append(Spacer(1, 20))
+            title_style = ParagraphStyle('MonthlyTitle', parent=styles['Heading1'],
+                                         fontName=registered_name,
+                                         fontSize=18, alignment=1,
+                                         textColor=colors.HexColor('#4472C4'), spaceAfter=12)
+            sub_style = ParagraphStyle('MonthlySub', parent=styles['Normal'],
+                                       fontName=registered_name,
+                                       fontSize=12, alignment=1, spaceAfter=20,
+                                       textColor=colors.HexColor('#4472C4'))
+            h2_style = ParagraphStyle('MonthlyH2', parent=styles['Heading2'],
+                                      fontName=registered_name,
+                                      fontSize=13, spaceBefore=8, spaceAfter=10)
+            normal_style = ParagraphStyle('MonthlyNormal', parent=styles['Normal'],
+                                          fontName=registered_name, fontSize=10)
+
+            elements.append(Paragraph("制造业设备生命周期成本分析月度报告", title_style))
+            elements.append(Paragraph(f"报告周期: {stats['report_month']}", sub_style))
+            elements.append(Spacer(1, 10))
 
             summary_data = [
                 ['指标', '数值'],
@@ -261,20 +296,29 @@ class MonthlyReportGenerator:
                 ['平均修复时间(MTTR)', f"{stats['avg_mttr_hours']:.2f} 小时"],
                 ['设备利用率', f"{stats['equipment_utilization']:.2f}%"],
             ]
-            summary_table = Table(summary_data, colWidths=[200, 200])
-            summary_table.setStyle(TableStyle([
+            summary_table = Table(summary_data, colWidths=[220, 200])
+            summary_style_list = [
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4472C4')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                 ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 10),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ]))
+                ('ALIGN', (1, 1), (-1, -1), 'RIGHT'),
+                ('FONTNAME', (0, 0), (-1, -1), registered_name),
+                ('FONTSIZE', (0, 0), (-1, 0), 11),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+                ('TOPPADDING', (0, 0), (-1, 0), 10),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#D0D0D0')),
+                ('FONTSIZE', (0, 1), (-1, -1), 10),
+            ]
+            for i in range(1, len(summary_data)):
+                if i % 2 == 0:
+                    summary_style_list.append(
+                        ('BACKGROUND', (0, i), (-1, i), colors.HexColor('#F0F7FF'))
+                    )
+            summary_table.setStyle(TableStyle(summary_style_list))
             elements.append(summary_table)
             elements.append(Spacer(1, 20))
 
-            elements.append(Paragraph("设备明细", styles['Heading2']))
+            elements.append(Paragraph("设备明细 (Top 30)", h2_style))
             detail_header = ['设备编号', '设备名称', '类型', '工单数', '维护成本', 'MTTR(h)']
             detail_data = [detail_header]
             for eq in stats['equipment_details'][:30]:
@@ -284,16 +328,23 @@ class MonthlyReportGenerator:
                     f"{eq['avg_mttr']:.1f}"
                 ])
             detail_table = Table(detail_data, colWidths=[70, 110, 70, 50, 80, 60])
-            detail_table.setStyle(TableStyle([
+            detail_style_list = [
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4472C4')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('FONTSIZE', (0, 0), (-1, -1), 8),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ]))
+                ('FONTNAME', (0, 0), (-1, -1), registered_name),
+                ('FONTSIZE', (0, 0), (-1, -1), 9),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#D0D0D0')),
+            ]
+            for i in range(1, len(detail_data)):
+                if i % 2 == 0:
+                    detail_style_list.append(
+                        ('BACKGROUND', (0, i), (-1, i), colors.HexColor('#F0F7FF'))
+                    )
+            detail_table.setStyle(TableStyle(detail_style_list))
             elements.append(detail_table)
             elements.append(Spacer(1, 20))
 
-            elements.append(Paragraph(f"生成时间: {now_str()}", styles['Normal']))
+            elements.append(Paragraph(f"生成时间: {now_str()}", normal_style))
             doc.build(elements)
             return True
         except Exception as e:
@@ -311,11 +362,6 @@ class MonthlyReportGenerator:
         base_name = f"monthly_report_{report_month}"
         pdf_path = os.path.join(self.output_dir, f'{base_name}.pdf')
         excel_path = os.path.join(self.output_dir, f'{base_name}.xlsx')
-        text_path = os.path.join(self.output_dir, f'{base_name}.txt')
-
-        text_content = self._generate_text_report(stats)
-        with open(text_path, 'w', encoding='utf-8') as f:
-            f.write(text_content)
 
         self.export_pdf(stats, pdf_path)
         self.export_excel(stats, excel_path)
