@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}仪表盘 - 预测性维护系统{% endblock %}
+{% block header_title %}DASHBOARD{% endblock %}
+{% block header_sub %}设备健康总览与实时监控{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1 class="page-title">系统总览</h1>
+  <div class="page-subtitle">实时监控设备运行状态、健康评分与工单进度</div>
+</div>
+
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-label">设备总数</div>
+    <div class="kpi-value" id="kpiTotal">0</div>
+    <div class="kpi-sub">在线运行设备</div>
+  </div>
+  <div class="kpi-card alert">
+    <div class="kpi-label">高风险设备</div>
+    <div class="kpi-value" id="kpiHighRisk">0</div>
+    <div class="kpi-sub">需立即维护</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">待处理工单</div>
+    <div class="kpi-value" id="kpiPendingWO">0</div>
+    <div class="kpi-sub">进行中工单</div>
+  </div>
+  <div class="kpi-card success">
+    <div class="kpi-label">健康评分均值</div>
+    <div class="kpi-value" id="kpiAvgHealth">0</div>
+    <div class="kpi-sub">RUL 综合评分</div>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="card scan-line">
+    <div class="card-header">
+      <div class="card-title"><span class="card-title-dot"></span>设备健康风险分布</div>
+      <span class="tag tag-info">RUL SCORE</span>
+    </div>
+    <div class="card-body">
+      <div id="chartRiskPie" class="chart-container"></div>
+    </div>
+  </div>
+  <div class="card scan-line">
+    <div class="card-header">
+      <div class="card-title"><span class="card-title-dot"></span>设备健康评分分布</div>
+      <span class="tag tag-info">SCORE RANGE</span>
+    </div>
+    <div class="card-body">
+      <div id="chartRULBar" class="chart-container"></div>
+    </div>
+  </div>
+</div>
+
+<div class="grid-2-1">
+  <div class="card scan-line">
+    <div class="card-header">
+      <div class="card-title"><span class="card-title-dot"></span>实时传感器数据</div>
+      <select id="equipmentSelect" class="form-select" style="width:220px; padding:6px 10px; background:var(--bg-tertiary); border:1px solid var(--border-color); color:var(--text-primary); border-radius:5px; font-size:12px; font-family:var(--font-mono);"></select>
+    </div>
+    <div class="card-body">
+      <div id="chartSensorLine" class="chart-container large"></div>
+    </div>
+    <div class="card-footer">
+      <span id="sensorInfo">选择设备查看过去24小时温度/振动/电流趋势</span>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><span class="card-title-dot"></span>库存预警</div>
+      <span class="tag tag-medium">LOW STOCK</span>
+    </div>
+    <div class="card-body">
+      <div id="lowStockList" class="alert-list"></div>
+    </div>
+  </div>
+</div>
+
+<div class="grid-1-2">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><span class="card-title-dot"></span>异常传感器告警</div>
+      <span class="tag tag-high">ANOMALIES</span>
+    </div>
+    <div class="card-body">
+      <div id="anomalyList" class="alert-list"></div>
+    </div>
+  </div>
+  <div class="card scan-line">
+    <div class="card-header">
+      <div class="card-title"><span class="card-title-dot"></span>工单状态统计</div>
+      <span class="tag tag-info">STATUS</span>
+    </div>
+    <div class="card-body">
+      <div id="chartWOStatus" class="chart-container"></div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}

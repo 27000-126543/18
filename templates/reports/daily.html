@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}日报 - {{ report_date }}{% endblock %}
+{% block header_title %}DAILY REPORT{% endblock %}
+{% block header_sub %}{{ report_date }} 设备维护管理日报{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1 class="page-title">日报</h1>
+  <div class="page-subtitle">日期: {{ report_date }} · 自动统计每日设备运行与维护数据</div>
+</div>
+
+<div class="card">
+  <div class="filter-bar">
+    <div class="filter-item">
+      <label>选择日期</label>
+      <input type="date" value="{{ report_date }}" onchange="location.href='/reports/daily?date='+this.value">
+    </div>
+    <div class="filter-spacer"></div>
+    <button class="btn btn-sm" onclick="exportCSV()">导出 CSV</button>
+    <button class="btn btn-sm btn-primary" onclick="exportPDF()">导出报告</button>
+  </div>
+
+  <div class="kpi-grid" style="margin:0;">
+    <div class="kpi-card" style="box-shadow:none; border:none; background:transparent;">
+      <div class="kpi-label">设备总数</div>
+      <div class="kpi-value">{{ stats.get('total_equipments', 0) }}</div>
+    </div>
+    <div class="kpi-card" style="box-shadow:none; border:none; background:transparent;">
+      <div class="kpi-label">活跃设备</div>
+      <div class="kpi-value" style="color:var(--cyan-primary);">{{ stats.get('active_equipments', 0) }}</div>
+    </div>
+    <div class="kpi-card alert" style="box-shadow:none; border:none; background:transparent;">
+      <div class="kpi-label">故障数</div>
+      <div class="kpi-value">{{ stats.get('fault_count', 0) }}</div>
+    </div>
+    <div class="kpi-card success" style="box-shadow:none; border:none; background:transparent;">
+      <div class="kpi-label">完成工单</div>
+      <div class="kpi-value">{{ stats.get('completed_orders', 0) }}</div>
+    </div>
+    <div class="kpi-card" style="box-shadow:none; border:none; background:transparent;">
+      <div class="kpi-label">平均修复时间</div>
+      <div class="kpi-value" style="font-size:24px;">{{ stats.get('mttr_hours', 0) }} h</div>
+    </div>
+    <div class="kpi-card" style="box-shadow:none; border:none; background:transparent;">
+      <div class="kpi-label">维护成本</div>
+      <div class="kpi-value" style="font-size:24px;">¥{{ stats.get('maintenance_cost', 0) }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:20px;">
+  <div class="card-header">
+    <div class="card-title"><span class="card-title-dot"></span>近期日报</div>
+  </div>
+  <div class="card-body" style="padding:0;">
+    <table class="data-table">
+      <thead>
+        <tr><th>日期</th><th>故障数</th><th>完成工单</th><th>MTTR(小时)</th><th>维护成本</th><th>操作</th></tr>
+      </thead>
+      <tbody>
+        {% for r in recent_reports %}
+        <tr>
+          <td style="font-family:monospace;color:var(--cyan-primary)">{{ r.report_date }}</td>
+          <td>{{ r.fault_count or 0 }}</td>
+          <td>{{ r.completed_orders or 0 }}</td>
+          <td>{{ r.mttr_hours or 0 }}</td>
+          <td style="font-family:monospace">¥{{ r.maintenance_cost or 0 }}</td>
+          <td>
+            <button class="btn btn-sm" onclick="viewDaily('{{ r.report_date }}')">查看</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+function exportCSV() {
+  const date = '{{ report_date }}';
+  window.location.href = `/reports/daily/export/excel?date=${date}`;
+}
+function exportPDF() {
+  const date = '{{ report_date }}';
+  window.location.href = `/reports/daily/export/pdf?date=${date}`;
+}
+function viewDaily(date) {
+  location.href = `/reports/daily?date=${date}`;
+}
+</script>
+{% endblock %}

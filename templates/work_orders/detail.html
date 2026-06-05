@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}工单详情 - {{ order.order_no }}{% endblock %}
+{% block header_title %}WORK ORDER DETAIL{% endblock %}
+{% block header_sub %}{{ order.order_no }} - {{ order.title }}{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1 class="page-title">工单详情</h1>
+  <div class="page-subtitle">{{ order.order_no }} · {{ order.title }}</div>
+</div>
+
+<div class="grid-2-1">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><span class="card-title-dot"></span>工单信息</div>
+      {{ workOrderStatusTag(order.status) }}
+    </div>
+    <div class="card-body">
+      <div class="detail-grid">
+        <div class="detail-item">
+          <div class="detail-label">工单号</div>
+          <div class="detail-value" style="color:var(--cyan-primary)">{{ order.order_no }}</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">优先级</div>
+          <div>{{ priorityTag(order.priority) }}</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">设备</div>
+          <div class="detail-value">{{ order.get('equipment_code', '-') }} · {{ order.get('equipment_name', '-') }}</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">位置</div>
+          <div class="detail-value">{{ order.get('location', '-') }}</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">负责工程师</div>
+          <div class="detail-value">{{ order.get('engineer_name', '未分配') }}</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">截止时间</div>
+          <div class="detail-value">{{ order.deadline or '-' }}</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">创建时间</div>
+          <div class="detail-value">{{ order.created_at }}</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">更新时间</div>
+          <div class="detail-value">{{ order.updated_at or '-' }}</div>
+        </div>
+      </div>
+      <div class="detail-item" style="margin-top:10px;">
+        <div class="detail-label">问题描述</div>
+        <div style="margin-top:6px; padding:12px; background:var(--bg-primary); border-radius:6px; color:var(--text-secondary);">
+          {{ order.description or '无' }}
+        </div>
+      </div>
+    </div>
+    <div class="card-footer" style="display:flex; gap:10px; flex-wrap:wrap;">
+      {% if order.status == 'pending' %}
+      <select id="assignEngineer" class="form-select" style="width:200px; padding:6px 10px;">
+        <option value="">选择工程师</option>
+        {% for eng in engineers %}
+        <option value="{{ eng.id }}">{{ eng.name }} [{{ eng.specialty }}]</option>
+        {% endfor %}
+      </select>
+      <button class="btn btn-primary btn-sm" onclick="assignEngineer()">分配工程师</button>
+      {% endif %}
+      {% if order.status == 'in_progress' %}
+      <button class="btn btn-success btn-sm" onclick="updateStatus('completed')">标记完成</button>
+      {% endif %}
+      {% if order.status == 'completed' %}
+      <button class="btn btn-primary btn-sm" onclick="updateStatus('verified')">验证通过</button>
+      {% endif %}
+      <button class="btn btn-sm" onclick="goBack()">返回列表</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><span class="card-title-dot"></span>状态流转</div>
+    </div>
+    <div class="card-body">
+      <div class="timeline">
+        {% for h in history %}
+        <div class="timeline-item completed">
+          <div class="timeline-time">{{ h.changed_at }}</div>
+          <div class="timeline-status">{{ h.to_status }}</div>
+          <div class="timeline-note">{{ h.note or '' }} · 操作人: {{ h.changed_by }}</div>
+        </div>
+        {% endfor %}
+        {% if not history %}
+        <div style="color:var(--text-dim); padding:10px;">暂无状态变更记录</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+function updateStatus(status) {
+  const body = `<p>确认将工单状态更新为 <b>${status}</b> ?</p>`;
+  showModal('状态更新', body, () => {
+    apiPost('/work_orders/{{ order.id }}/status', { status: status, operator: 'web_user' }, (d) => {
+      if (d.success) location.reload();
+      else showModal('失败', '<p>状态更新失败</p>');
+    });
+  });
+}
+
+function assignEngineer() {
+  const engId = document.getElementById('assignEngineer').value;
+  if (!engId) { showModal('提示', '<p>请选择工程师</p>'); return; }
+  showModal('分配确认', `<p>确认分配工单给选中的工程师?</p>`, () => {
+    apiPost('/work_orders/{{ order.id }}/status', {
+      status: 'in_progress', engineer_id: engId, operator: 'web_user'
+    }, (d) => {
+      if (d.success) location.reload();
+      else showModal('失败', '<p>分配失败</p>');
+    });
+  });
+}
+
+function goBack() { window.location.href = '{{ url_for("work_orders") }}'; }
+</script>
+{% endblock %}

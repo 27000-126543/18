@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}月报 - {{ report_month }}{% endblock %}
+{% block header_title %}MONTHLY REPORT{% endblock %}
+{% block header_sub %}{{ report_month }} 月度设备生命周期成本分析{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1 class="page-title">月报</h1>
+  <div class="page-subtitle">月份: {{ report_month }} · 设备生命周期成本分析与维护成效报告</div>
+</div>
+
+<div class="card">
+  <div class="filter-bar">
+    <div class="filter-item">
+      <label>选择月份</label>
+      <input type="month" value="{{ report_month }}" onchange="location.href='/reports/monthly?month='+this.value">
+    </div>
+    <div class="filter-spacer"></div>
+    <button class="btn btn-sm" onclick="exportExcel()">导出 Excel</button>
+    <button class="btn btn-sm btn-primary" onclick="exportPDF()">导出 PDF</button>
+  </div>
+
+  <div class="kpi-grid" style="margin:0;">
+    <div class="kpi-card" style="box-shadow:none; border:none; background:transparent;">
+      <div class="kpi-label">月总维护成本</div>
+      <div class="kpi-value" style="font-size:24px;">¥{{ fmt_float(stats.get('total_maintenance_cost', 0), 0) }}</div>
+    </div>
+    <div class="kpi-card" style="box-shadow:none; border:none; background:transparent;">
+      <div class="kpi-label">总故障数</div>
+      <div class="kpi-value">{{ stats.get('total_faults', 0) }}</div>
+    </div>
+    <div class="kpi-card alert" style="box-shadow:none; border:none; background:transparent;">
+      <div class="kpi-label">故障率</div>
+      <div class="kpi-value" style="font-size:24px;">{{ fmt_float(stats.get('fault_rate', 0), 1) }}%</div>
+    </div>
+    <div class="kpi-card success" style="box-shadow:none; border:none; background:transparent;">
+      <div class="kpi-label">平均MTTR</div>
+      <div class="kpi-value" style="font-size:24px;">{{ fmt_float(stats.get('avg_mttr', 0), 1) }} h</div>
+    </div>
+    <div class="kpi-card" style="box-shadow:none; border:none; background:transparent;">
+      <div class="kpi-label">平均健康评分</div>
+      <div class="kpi-value">{{ fmt_float(stats.get('avg_health_score', 0), 0) }}</div>
+    </div>
+    <div class="kpi-card" style="box-shadow:none; border:none; background:transparent;">
+      <div class="kpi-label">备件采购支出</div>
+      <div class="kpi-value" style="font-size:24px;">¥{{ fmt_float(stats.get('spare_parts_cost', 0), 0) }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:20px;">
+  <div class="card-header">
+    <div class="card-title"><span class="card-title-dot"></span>历史月报</div>
+  </div>
+  <div class="card-body" style="padding:0;">
+    <table class="data-table">
+      <thead>
+        <tr><th>月份</th><th>总维护成本</th><th>故障数</th><th>故障率</th><th>平均MTTR</th><th>平均健康评分</th><th>操作</th></tr>
+      </thead>
+      <tbody>
+        {% for r in reports %}
+        <tr>
+          <td style="font-family:monospace;color:var(--cyan-primary)">{{ r.report_month }}</td>
+          <td style="font-family:monospace">¥{{ r.total_maintenance_cost or 0 }}</td>
+          <td>{{ r.total_faults or 0 }}</td>
+          <td>{{ r.fault_rate or 0 }}%</td>
+          <td>{{ r.avg_mttr or 0 }}h</td>
+          <td>{{ r.avg_health_score or 0 }}</td>
+          <td>
+            <button class="btn btn-sm" onclick="viewMonthly('{{ r.report_month }}')">查看</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+function fmtFloat(n, d) {
+  if (n === null || n === undefined || isNaN(n)) return '0';
+  return Number(n).toFixed(d);
+}
+function exportExcel() {
+  const month = '{{ report_month }}';
+  window.location.href = `/reports/monthly/export/excel?month=${month}`;
+}
+function exportPDF() {
+  const month = '{{ report_month }}';
+  window.location.href = `/reports/monthly/export/pdf?month=${month}`;
+}
+function viewMonthly(month) {
+  location.href = `/reports/monthly?month=${month}`;
+}
+</script>
+{% endblock %}

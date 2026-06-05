@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}操作日志{% endblock %}
+{% block header_title %}LOGS{% endblock %}
+{% block header_sub %}系统操作日志查询与导出{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1 class="page-title">操作日志</h1>
+  <div class="page-subtitle">按设备、操作类型、时间范围组合查询，支持批量导出</div>
+</div>
+
+<div class="card">
+  <div class="filter-bar">
+    <div class="filter-item">
+      <label>设备编号</label>
+      <input type="text" id="f_equipment" placeholder="如 EQ-001">
+    </div>
+    <div class="filter-item">
+      <label>模块</label>
+      <select id="f_module">
+        <option value="">全部</option>
+      </select>
+    </div>
+    <div class="filter-item">
+      <label>操作类型</label>
+      <select id="f_type">
+        <option value="">全部</option>
+      </select>
+    </div>
+    <div class="filter-item">
+      <label>开始时间</label>
+      <input type="datetime-local" id="f_start">
+    </div>
+    <div class="filter-item">
+      <label>结束时间</label>
+      <input type="datetime-local" id="f_end">
+    </div>
+    <button class="btn btn-sm" onclick="currentPage=1; loadLogs()">查询</button>
+    <div class="filter-spacer"></div>
+    <button class="btn btn-sm btn-primary" onclick="exportLogs()">
+      <span>⬇</span>导出CSV
+    </button>
+  </div>
+  <div class="table-container">
+    <table class="data-table" id="logTable">
+      <thead>
+        <tr>
+          <th>时间</th>
+          <th>模块</th>
+          <th>操作类型</th>
+          <th>设备</th>
+          <th>操作人</th>
+          <th>详情</th>
+        </tr>
+      </thead>
+      <tbody id="logBody">
+        <tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text-dim)"><span class="loading-spinner"></span> 加载中...</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="pagination" id="logPagination"></div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+let currentPage = 1;
+document.addEventListener('DOMContentLoaded', loadLogs);
+
+function loadLogs() {
+  const params = new URLSearchParams({
+    page: currentPage,
+    equipment_code: document.getElementById('f_equipment').value,
+    module: document.getElementById('f_module').value,
+    operation_type: document.getElementById('f_type').value,
+    start_time: document.getElementById('f_start').value,
+    end_time: document.getElementById('f_end').value
+  });
+  apiGet('/api/logs?' + params.toString(), (d) => {
+    const body = document.getElementById('logBody');
+    if (!d.logs || d.logs.length === 0) {
+      body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text-dim)">暂无日志数据</td></tr>';
+    } else {
+      body.innerHTML = d.logs.map(l => `
+        <tr>
+          <td style="font-family:monospace;font-size:12px;color:var(--text-dim)">${(l.created_at||'').slice(0,19)}</td>
+          <td><span class="tag tag-info">${l.module || '-'}</span></td>
+          <td>${l.operation_type || '-'}</td>
+          <td style="font-family:monospace;color:var(--cyan-primary)">${l.equipment_code || '-'}</td>
+          <td>${l.operator || '-'}</td>
+          <td style="color:var(--text-secondary);font-size:12px;max-width:400px;">${l.details || ''}</td>
+        </tr>
+      `).join('');
+    }
+
+    if (d.operation_types) {
+      const typeSel = document.getElementById('f_type');
+      if (typeSel.options.length <= 1) {
+        typeSel.innerHTML = '<option value="">全部</option>' +
+          d.operation_types.map(t => `<option value="${t}">${t}</option>`).join('');
+      }
+    }
+    if (d.modules) {
+      const mSel = document.getElementById('f_module');
+      if (mSel.options.length <= 1) {
+        mSel.innerHTML = '<option value="">全部</option>' +
+          d.modules.map(m => `<option value="${m}">${m}</option>`).join('');
+      }
+    }
+
+    const totalPages = Math.ceil(d.total / d.page_size);
+    let pg = '';
+    for (let i = 1; i <= Math.min(totalPages, 10); i++) {
+      pg += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="goLogPage(${i})">${i}</button>`;
+    }
+    document.getElementById('logPagination').innerHTML = pg;
+  });
+}
+
+function goLogPage(p) { currentPage = p; loadLogs(); }
+
+function exportLogs() {
+  const params = new URLSearchParams({
+    equipment_code: document.getElementById('f_equipment').value,
+    module: document.getElementById('f_module').value,
+    operation_type: document.getElementById('f_type').value,
+    start_time: document.getElementById('f_start').value,
+    end_time: document.getElementById('f_end').value
+  });
+  window.location.href = '/logs/export?' + params.toString();
+}
+</script>
+{% endblock %}

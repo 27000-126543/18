@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}设备管理{% endblock %}
+{% block header_title %}EQUIPMENTS{% endblock %}
+{% block header_sub %}生产设备健康状态监控{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1 class="page-title">设备管理</h1>
+  <div class="page-subtitle">所有生产设备状态与健康评分概览</div>
+</div>
+
+<div class="card">
+  <div class="filter-bar">
+    <div class="filter-item">
+      <label>搜索</label>
+      <input type="text" id="searchKw" placeholder="设备编号/名称/位置" onkeypress="if(event.key==='Enter')loadEquipments()">
+    </div>
+    <button class="btn btn-sm" onclick="loadEquipments()">搜索</button>
+  </div>
+  <div class="table-container">
+    <table class="data-table" id="eqTable">
+      <thead>
+        <tr>
+          <th>设备编号</th>
+          <th>名称</th>
+          <th>类型</th>
+          <th>位置</th>
+          <th>状态</th>
+          <th>RUL评分</th>
+          <th>健康状态</th>
+          <th>安装日期</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="eqBody">
+        <tr><td colspan="9" style="text-align:center;padding:30px;color:var(--text-dim)"><span class="loading-spinner"></span> 加载中...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', loadEquipments);
+
+function loadEquipments() {
+  const kw = document.getElementById('searchKw').value;
+  apiGet('/api/equipments/list?keyword=' + encodeURIComponent(kw), (list) => {
+    const body = document.getElementById('eqBody');
+    if (!list || list.length === 0) {
+      body.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--text-dim)">暂无设备数据</td></tr>';
+      return;
+    }
+    body.innerHTML = list.map(e => {
+      const rul = e.rul_score || 0;
+      const isRisk = rul < 60;
+      return `
+        <tr class="${isRisk ? 'alert-row' : ''}">
+          <td style="font-family:monospace;color:var(--cyan-primary)">${e.equipment_code}</td>
+          <td>${e.name}</td>
+          <td>${e.type || '-'}</td>
+          <td>${e.location || '-'}</td>
+          <td><span class="tag ${e.status === 'active' ? 'tag-normal' : 'tag-info'}">${e.status === 'active' ? '运行' : e.status}</span></td>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <b style="color:${rul < 30 ? 'var(--red-danger)' : rul < 60 ? 'var(--orange-alert)' : rul < 90 ? 'var(--yellow-warn)' : 'var(--green-ok)'};font-family:monospace;">${fmtFloat(rul, 0)}</b>
+              <div class="health-bar" style="flex:1;max-width:100px;">
+                <div class="health-bar-fill" style="width:${Math.min(100, rul)}%"></div>
+              </div>
+            </div>
+          </td>
+          <td>${healthStatusTag(e.health_status || 'normal')}</td>
+          <td style="font-family:monospace;font-size:12px;color:var(--text-dim)">${(e.install_date||'').slice(0,10)}</td>
+          <td>
+            <a href="/equipment/${e.id}" class="btn btn-sm">详情</a>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  });
+}
+</script>
+{% endblock %}

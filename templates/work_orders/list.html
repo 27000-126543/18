@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}工单管理{% endblock %}
+{% block header_title %}WORK ORDERS{% endblock %}
+{% block header_sub %}预测性维护工单全生命周期管理{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1 class="page-title">工单管理</h1>
+  <div class="page-subtitle">查看、分配和处理所有预测性维护工单</div>
+</div>
+
+<div class="card">
+  <div class="filter-bar">
+    <div class="filter-item">
+      <label>状态</label>
+      <select id="filterStatus">
+        <option value="">全部</option>
+        <option value="pending">待分配</option>
+        <option value="in_progress">进行中</option>
+        <option value="completed">已完成</option>
+        <option value="verified">已验证</option>
+      </select>
+    </div>
+    <div class="filter-item">
+      <label>优先级</label>
+      <select id="filterPriority">
+        <option value="">全部</option>
+        <option value="high">高</option>
+        <option value="medium">中</option>
+        <option value="low">低</option>
+      </select>
+    </div>
+    <div class="filter-spacer"></div>
+    <a href="{{ url_for('create_work_order') }}" class="btn btn-primary">
+      <span>＋</span>新建工单
+    </a>
+  </div>
+  <div class="table-container">
+    <table class="data-table" id="woTable">
+      <thead>
+        <tr>
+          <th>工单号</th>
+          <th>标题</th>
+          <th>设备</th>
+          <th>位置</th>
+          <th>优先级</th>
+          <th>状态</th>
+          <th>工程师</th>
+          <th>截止时间</th>
+          <th>创建时间</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="woTableBody"></tbody>
+    </table>
+  </div>
+  <div class="pagination" id="pagination"></div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+let currentPage = 1;
+document.addEventListener('DOMContentLoaded', loadWorkOrders);
+document.getElementById('filterStatus').onchange = () => { currentPage = 1; loadWorkOrders(); };
+document.getElementById('filterPriority').onchange = () => { currentPage = 1; loadWorkOrders(); };
+
+function loadWorkOrders() {
+  const status = document.getElementById('filterStatus').value;
+  const priority = document.getElementById('filterPriority').value;
+  const url = `/api/work_orders?page=${currentPage}&status=${status}&priority=${priority}`;
+  apiGet(url, (data) => {
+    const tbody = document.getElementById('woTableBody');
+    tbody.innerHTML = data.orders.map(o => `
+      <tr class="${o.priority === 'high' ? 'alert-row' : ''}">
+        <td style="font-family:monospace;color:var(--cyan-primary)">${o.order_no}</td>
+        <td>${o.title}</td>
+        <td>${o.equipment_code}</td>
+        <td>${o.location || '-'}</td>
+        <td>${priorityTag(o.priority)}</td>
+        <td>${workOrderStatusTag(o.status)}</td>
+        <td>${o.engineer_name || '-'}</td>
+        <td style="font-family:monospace;font-size:12px;">${(o.deadline||'').slice(0,16)}</td>
+        <td style="font-family:monospace;font-size:12px;color:var(--text-dim);">${(o.created_at||'').slice(0,16)}</td>
+        <td>
+          <a href="/work_orders/${o.id}" class="btn btn-sm">详情</a>
+        </td>
+      </tr>
+    `).join('');
+    renderPagination(data.total, data.page_size);
+  });
+}
+
+function renderPagination(total, pageSize) {
+  const totalPages = Math.ceil(total / pageSize);
+  const el = document.getElementById('pagination');
+  let html = '';
+  for (let i = 1; i <= Math.min(totalPages, 10); i++) {
+    html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="goPage(${i})">${i}</button>`;
+  }
+  el.innerHTML = html;
+}
+
+function goPage(p) {
+  currentPage = p;
+  loadWorkOrders();
+}
+</script>
+{% endblock %}

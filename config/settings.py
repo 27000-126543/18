@@ -8,6 +8,16 @@ DATABASE = {
     'path': os.path.join(BASE_DIR, 'data', 'predictive_maintenance.db'),
 }
 
+WEB_CONFIG = {
+    'host': '127.0.0.1',
+    'port': 5001,
+    'debug': False,
+    'secret_key': 'predictive_maintenance_secret_key_2026',
+    'session_cookie_name': 'pm_session',
+    'permanent_session_lifetime_days': 7,
+    'items_per_page': 20,
+}
+
 SENSOR_CONFIG = {
     'metrics': ['temperature', 'vibration', 'current', 'pressure', 'rpm'],
     'default_collection_interval': 60,
@@ -35,6 +45,7 @@ INVENTORY_CONFIG = {
     'safety_stock_factor': 1.5,
     'lead_time_days_default': 7,
     'budget_warning_threshold': 0.8,
+    'monthly_budget': 500000.0,
 }
 
 REPORT_CONFIG = {
@@ -63,7 +74,23 @@ SCHEDULER_CONFIG = {
 
 NOTIFICATION_CONFIG = {
     'enabled': True,
+    'use_real_email': False,
     'production_supervisor_email': 'supervisor@factory.com',
     'management_email': 'management@factory.com',
+    'inventory_email': 'inventory@factory.com',
+    'finance_email': 'finance@factory.com',
     'escalation_levels': ['engineer', 'supervisor', 'manager', 'director'],
+}
+
+EMAIL_CONFIG = {
+    'smtp_server': 'smtp.qq.com',
+    'smtp_port': 465,
+    'use_ssl': True,
+    'use_tls': False,
+    'username': 'your_email@qq.com',
+    'password': 'your_smtp_auth_code',
+    'sender_name': '制造业预测性维护系统',
+    'max_retries': 3,
+    'retry_interval': 5,
+    'timeout': 30,
 }

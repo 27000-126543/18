@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+{% block title %}库存管理{% endblock %}
+{% block header_title %}INVENTORY{% endblock %}
+{% block header_sub %}备件库存管理与预警{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1 class="page-title">库存管理</h1>
+  <div class="page-subtitle">备件库存状态、出入库记录与低库存预警</div>
+</div>
+
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-label">备件种类</div>
+    <div class="kpi-value" id="kpiPartKinds">0</div>
+    <div class="kpi-sub">已注册备件</div>
+  </div>
+  <div class="kpi-card alert">
+    <div class="kpi-label">预警备件</div>
+    <div class="kpi-value" id="kpiLowStock">0</div>
+    <div class="kpi-sub">低于安全库存</div>
+  </div>
+  <div class="kpi-card success">
+    <div class="kpi-label">库存总值</div>
+    <div class="kpi-value" id="kpiTotalValue">¥0</div>
+    <div class="kpi-sub">总库存价值</div>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="filter-bar">
+      <div class="filter-item">
+        <label>筛选</label>
+        <select id="filterLow" onchange="loadParts()">
+          <option value="false">全部备件</option>
+          <option value="true">仅显示预警</option>
+        </select>
+      </div>
+      <div class="filter-spacer"></div>
+      <button class="btn btn-primary btn-sm" onclick="showTransModal()">
+        <span>＋</span>出入库
+      </button>
+    </div>
+    <div class="table-container">
+      <table class="data-table" id="partsTable">
+        <thead>
+          <tr>
+            <th>编码</th>
+            <th>备件名称</th>
+            <th>当前库存</th>
+            <th>安全库存</th>
+            <th>单位</th>
+            <th>单价</th>
+            <th>库存状态</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="partsBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><span class="card-title-dot"></span>出入库记录 (最近100条)</div>
+    </div>
+    <div class="card-body" style="padding:0;">
+      <div class="table-container">
+        <table class="data-table" id="transTable">
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>备件</th>
+              <th>类型</th>
+              <th>数量</th>
+              <th>操作人</th>
+              <th>备注</th>
+            </tr>
+          </thead>
+          <tbody id="transBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="transModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">出入库操作</div>
+      <button class="modal-close" onclick="document.getElementById('transModal').classList.remove('show')">✕</button>
+    </div>
+    <form onsubmit="submitTransaction(event)">
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">备件</label>
+          <select name="part_id" id="transPartId" class="form-select" required></select>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">类型</label>
+            <select name="type" class="form-select" required>
+              <option value="in">入库</option>
+              <option value="out">出库</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">数量</label>
+            <input type="number" name="quantity" class="form-input" min="1" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">操作人</label>
+          <input type="text" name="operator" class="form-input" placeholder="当前用户">
+        </div>
+        <div class="form-group">
+          <label class="form-label">备注</label>
+          <textarea name="note" class="form-textarea" placeholder="出入库原因、关联单号等"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" onclick="document.getElementById('transModal').classList.remove('show')">取消</button>
+        <button type="submit" class="btn btn-primary">确认</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  loadParts();
+  loadTransactions();
+});
+
+function loadParts() {
+  const lowOnly = document.getElementById('filterLow').value;
+  apiGet(`/api/inventory/parts?low_only=${lowOnly}`, (d) => {
+    const body = document.getElementById('partsBody');
+    const parts = d.parts;
+    body.innerHTML = parts.map(p => {
+      const pct = p.safety_stock > 0 ? Math.min(100, Math.round(p.current_stock / p.safety_stock * 100)) : 100;
+      const isLow = p.current_stock <= p.safety_stock;
+      return `
+        <tr class="${isLow ? 'alert-row' : ''}">
+          <td style="font-family:monospace;color:var(--cyan-primary)">${p.part_code}</td>
+          <td>${p.name}</td>
+          <td><b style="color:${isLow ? 'var(--red-danger)' : 'var(--text-primary)'}">${p.current_stock}</b></td>
+          <td style="color:var(--text-dim)">${p.safety_stock}</td>
+          <td>${p.unit || '-'}</td>
+          <td style="font-family:monospace">¥${fmtFloat(p.unit_price)}</td>
+          <td>
+            <div class="health-bar" style="max-width:120px;">
+              <div class="health-bar-fill" style="width:${pct}%"></div>
+            </div>
+          </td>
+          <td>
+            <button class="btn btn-sm" onclick="openTransFor(${p.id})">操作</button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+    document.getElementById('kpiPartKinds').textContent = parts.length;
+    document.getElementById('kpiLowStock').textContent = parts.filter(p => p.current_stock <= p.safety_stock).length;
+    const total = parts.reduce((s, p) => s + (p.current_stock || 0) * (p.unit_price || 0), 0);
+    document.getElementById('kpiTotalValue').textContent = '¥' + fmtNumber(Math.round(total));
+
+    document.getElementById('transPartId').innerHTML = parts.map(p =>
+      `<option value="${p.id}">${p.part_code} - ${p.name}</option>`
+    ).join('');
+  });
+}
+
+function loadTransactions() {
+  apiGet('/api/inventory/transactions', (list) => {
+    document.getElementById('transBody').innerHTML = list.map(t => `
+      <tr>
+        <td style="font-family:monospace;font-size:11px;color:var(--text-dim)">${(t.transaction_date||'').slice(0,16)}</td>
+        <td>${t.part_code} ${t.part_name}</td>
+        <td><span class="tag ${t.transaction_type === 'in' ? 'tag-normal' : 'tag-medium'}">${t.transaction_type === 'in' ? '入库' : '出库'}</span></td>
+        <td style="font-family:monospace;color:${t.transaction_type === 'in' ? 'var(--green-ok)' : 'var(--orange-alert)'}">${t.transaction_type === 'in' ? '+' : '-'}${t.quantity}</td>
+        <td>${t.operator || '-'}</td>
+        <td style="color:var(--text-dim);font-size:12px;">${t.note || '-'}</td>
+      </tr>
+    `).join('');
+  });
+}
+
+function showTransModal() {
+  document.getElementById('transModal').classList.add('show');
+}
+
+function openTransFor(partId) {
+  document.getElementById('transPartId').value = partId;
+  showTransModal();
+}
+
+function submitTransaction(e) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const data = {};
+  fd.forEach((v, k) => data[k] = v);
+  if (!data.operator) data.operator = 'web_user';
+  apiPost('/inventory/transaction', data, (d) => {
+    if (d.success) {
+      document.getElementById('transModal').classList.remove('show');
+      e.target.reset();
+      loadParts();
+      loadTransactions();
+    } else {
+      showModal('失败', '<p>出入库操作失败</p>');
+    }
+  });
+}
+</script>
+{% endblock %}

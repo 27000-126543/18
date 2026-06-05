@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+{% block title %}设备详情 - {{ equipment.equipment_code }}{% endblock %}
+{% block header_title %}EQUIPMENT DETAIL{% endblock %}
+{% block header_sub %}{{ equipment.equipment_code }} - {{ equipment.name }}{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1 class="page-title">设备详情</h1>
+  <div class="page-subtitle">{{ equipment.equipment_code }} · {{ equipment.name }}</div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><span class="card-title-dot"></span>基本信息</div>
+      <span class="tag tag-info">{{ equipment.status }}</span>
+    </div>
+    <div class="card-body">
+      <div class="detail-grid">
+        <div class="detail-item">
+          <div class="detail-label">设备编号</div>
+          <div class="detail-value" style="color:var(--cyan-primary)">{{ equipment.equipment_code }}</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">设备名称</div>
+          <div class="detail-value">{{ equipment.name }}</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">类型</div>
+          <div class="detail-value">{{ equipment.type or '-' }}</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">位置</div>
+          <div class="detail-value">{{ equipment.location or '-' }}</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">安装日期</div>
+          <div class="detail-value">{{ equipment.install_date or '-' }}</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">采购成本</div>
+          <div class="detail-value">¥{{ equipment.purchase_cost or 0 }}</div>
+        </div>
+      </div>
+      <div class="detail-item" style="margin-top:16px;">
+        <div class="detail-label">技术规格</div>
+        <div style="margin-top:6px;padding:12px;background:var(--bg-primary);border-radius:6px;color:var(--text-secondary);font-family:monospace;font-size:12px;">
+          {{ equipment.specs or '无' }}
+        </div>
+      </div>
+    </div>
+    <div class="card-footer" style="display:flex; gap:10px;">
+      {% if equipment.status != 'scrapped' %}
+      <button class="btn btn-danger btn-sm" onclick="showScrapModal()">设备报废</button>
+      {% endif %}
+      <a href="{{ url_for('equipment_list') }}" class="btn btn-sm">返回列表</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><span class="card-title-dot"></span>健康状态 (近30天)</div>
+      {{ healthStatusTag(equipment.health_status or 'normal') }}
+    </div>
+    <div class="card-body">
+      <div style="display:flex; align-items:center; gap:20px; margin-bottom:24px;">
+        <div style="text-align:center;">
+          <div style="font-size:48px; font-family:monospace; font-weight:bold;
+            color:{{ (equipment.rul_score or 0) < 30 ? 'var(--red-danger)' : (equipment.rul_score or 0) < 60 ? 'var(--orange-alert)' : 'var(--green-ok)' }};
+            text-shadow:0 0 20px currentColor;">
+            {{ equipment.rul_score or 0 }}
+          </div>
+          <div style="font-size:11px; color:var(--text-dim);">RUL SCORE</div>
+        </div>
+        <div style="flex:1;">
+          <div class="health-bar" style="height:12px; border-radius:6px;">
+            <div class="health-bar-fill" style="width:{{ equipment.rul_score or 0 }}%; height:12px;"></div>
+          </div>
+          <div style="display:flex; justify-content:space-between; margin-top:8px; font-family:monospace; font-size:11px; color:var(--text-dim);">
+            <span>0 高危</span>
+            <span>30</span>
+            <span>60 中危</span>
+            <span>90 正常</span>
+            <span>100</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="detail-grid" style="margin-top:20px;">
+        <div class="detail-item">
+          <div class="detail-label">30天温度均值</div>
+          <div class="detail-value">{{ fmt_float(stats.get('temp_avg'), 1) }}℃</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">30天振动均值</div>
+          <div class="detail-value">{{ fmt_float(stats.get('vibration_avg'), 2) }} mm/s</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">30天电流均值</div>
+          <div class="detail-value">{{ fmt_float(stats.get('current_avg'), 2) }} A</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">异常率</div>
+          <div class="detail-value">{{ fmt_float(stats.get('anomaly_rate'), 1) }}%</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card scan-line" style="margin-bottom:28px;">
+  <div class="card-header">
+    <div class="card-title"><span class="card-title-dot"></span>传感器趋势 (近48小时)</div>
+  </div>
+  <div class="card-body">
+    <div id="sensorChart" class="chart-container large"></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <div class="card-title"><span class="card-title-dot"></span>健康历史 (近30天)</div>
+  </div>
+  <div class="card-body" style="padding:0;">
+    <table class="data-table">
+      <thead>
+        <tr><th>日期</th><th>RUL评分</th><th>健康状态</th><th>温度偏差</th><th>振动偏差</th><th>电流偏差</th><th>异常数</th></tr>
+      </thead>
+      <tbody>
+        {% for h in health_history %}
+        <tr>
+          <td style="font-family:monospace;">{{ h.record_date }}</td>
+          <td style="font-family:monospace;font-weight:bold;">{{ h.rul_score }}</td>
+          <td>{{ healthStatusTag(h.health_status) }}</td>
+          <td>{{ fmt_float(h.temp_deviation, 2) }}σ</td>
+          <td>{{ fmt_float(h.vibration_deviation, 2) }}σ</td>
+          <td>{{ fmt_float(h.current_deviation, 2) }}σ</td>
+          <td>{{ h.anomaly_count or 0 }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal-overlay" id="scrapModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">设备报废确认</div>
+      <button class="modal-close" onclick="document.getElementById('scrapModal').classList.remove('show')">✕</button>
+    </div>
+    <form onsubmit="submitScrap(event)">
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">报废原因</label>
+          <textarea name="reason" class="form-textarea" required placeholder="请输入设备报废原因"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">残值 (¥)</label>
+          <input type="number" name="residual_value" class="form-input" value="0" min="0">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" onclick="document.getElementById('scrapModal').classList.remove('show')">取消</button>
+        <button type="submit" class="btn btn-danger">确认报废</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+function fmtFloat(n, d) {
+  if (n === null || n === undefined || isNaN(n)) return '0';
+  return Number(n).toFixed(d);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const chart = echarts.init(document.getElementById('sensorChart'));
+  const option = {
+    backgroundColor: 'transparent',
+    textStyle: { color: '#94a3b8' },
+    tooltip: { trigger: 'axis', backgroundColor: 'rgba(17,28,51,0.95)', borderColor: 'rgba(0,212,255,0.3)', textStyle: { color: '#e2e8f0' } },
+    legend: { top: 0, right: 0, textStyle: { color: '#94a3b8' }, data: ['温度(℃)','振动(mm/s)','电流(A)'] },
+    grid: { left: 50, right: 50, top: 40, bottom: 40 },
+    xAxis: {
+      type: 'category', data: {{ recent_data | map(attribute='collection_time') | list | tojson }},
+      axisLine: { lineStyle: { color: 'rgba(0,212,255,0.2)' } },
+      axisLabel: { color: '#94a3b8', fontSize: 10, rotate: 30 }
+    },
+    yAxis: [
+      { type: 'value', axisLine: { show: false }, axisLabel: { color: '#94a3b8' }, splitLine: { lineStyle: { color: 'rgba(0,212,255,0.05)' } } },
+      { type: 'value', axisLine: { show: false }, axisLabel: { color: '#94a3b8' }, splitLine: { show: false } }
+    ],
+    series: [
+      { name: '温度(℃)', type: 'line', smooth: true, symbol: 'none',
+        lineStyle: { color: '#ff4444', width: 2 },
+        areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+          colorStops: [{ offset: 0, color: 'rgba(255,68,68,0.3)' }, { offset: 1, color: 'transparent' }] } },
+        data: {{ recent_data | map(attribute='temperature') | list | tojson }} },
+      { name: '振动(mm/s)', type: 'line', smooth: true, symbol: 'none',
+        lineStyle: { color: '#00d4ff', width: 2 },
+        areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+          colorStops: [{ offset: 0, color: 'rgba(0,212,255,0.3)' }, { offset: 1, color: 'transparent' }] } },
+        data: {{ recent_data | map(attribute='vibration') | list | tojson }} },
+      { name: '电流(A)', type: 'line', yAxisIndex: 1, smooth: true, symbol: 'none',
+        lineStyle: { color: '#10b981', width: 2, type: 'dashed' },
+        data: {{ recent_data | map(attribute='current') | list | tojson }} }
+    ]
+  };
+  chart.setOption(option);
+  window.addEventListener('resize', () => chart.resize());
+});
+
+function showScrapModal() {
+  document.getElementById('scrapModal').classList.add('show');
+}
+
+function submitScrap(e) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const data = { equipment_id: {{ equipment.id }} };
+  fd.forEach((v, k) => data[k] = v);
+  apiPost('/equipment/scrap', data, (d) => {
+    if (d.success) {
+      document.getElementById('scrapModal').classList.remove('show');
+      showModal('报废成功', '<p>设备已成功报废，相关备件台账已更新</p>',
+        () => { window.location.href = '{{ url_for("equipment_list") }}'; });
+    } else {
+      showModal('失败', '<p>设备报废失败</p>');
+    }
+  });
+}
+</script>
+{% endblock %}

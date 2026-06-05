@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}新建工单{% endblock %}
+{% block header_title %}NEW WORK ORDER{% endblock %}
+{% block header_sub %}创建预测性维护工单{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1 class="page-title">新建工单</h1>
+  <div class="page-subtitle">填写工单信息，系统将自动分配最合适的工程师</div>
+</div>
+
+<div class="card" style="max-width:800px;">
+  <form method="POST">
+    <div class="card-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">设备</label>
+          <select name="equipment_id" class="form-select" required>
+            <option value="">请选择设备</option>
+            {% for eq in equipments %}
+            <option value="{{ eq.id }}">{{ eq.equipment_code }} - {{ eq.name }} [{{ eq.location }}]</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">优先级</label>
+          <select name="priority" class="form-select">
+            <option value="low">低</option>
+            <option value="medium">中</option>
+            <option value="high">高</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">工单标题</label>
+        <input type="text" name="title" class="form-input" required placeholder="例如：预防性维护 - 温度异常">
+      </div>
+      <div class="form-group">
+        <label class="form-label">详细描述</label>
+        <textarea name="description" class="form-textarea" placeholder="描述问题现象、检测到的异常指标等"></textarea>
+      </div>
+    </div>
+    <div class="card-footer" style="display:flex; gap:10px;">
+      <a href="{{ url_for('work_orders') }}" class="btn">取消</a>
+      <button type="submit" class="btn btn-primary">创建工单</button>
+    </div>
+  </form>
+</div>
+
+{% endblock %}
+{% block scripts %}{% endblock %}

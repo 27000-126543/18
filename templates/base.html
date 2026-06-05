@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}制造业预测性维护与备件管理系统{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo">
+        <div class="sidebar-logo-icon">⚙</div>
+        <div>
+          <div>SmartFactory</div>
+          <div class="sidebar-subtitle">Predictive Maintenance</div>
+        </div>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-section">
+        <div class="nav-section-title">概览</div>
+        <a href="{{ url_for('dashboard') }}" class="nav-item {% if active_page == 'dashboard' %}active{% endif %}">
+          <span class="nav-icon">▦</span>仪表盘
+        </a>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">运维管理</div>
+        <a href="{{ url_for('equipment_list') }}" class="nav-item {% if active_page == 'equipment' %}active{% endif %}">
+          <span class="nav-icon">▤</span>设备管理
+        </a>
+        <a href="{{ url_for('work_orders') }}" class="nav-item {% if active_page == 'work_orders' %}active{% endif %}">
+          <span class="nav-icon">▧</span>工单管理
+        </a>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">供应链</div>
+        <a href="{{ url_for('inventory') }}" class="nav-item {% if active_page == 'inventory' %}active{% endif %}">
+          <span class="nav-icon">▥</span>库存管理
+        </a>
+        <a href="{{ url_for('suppliers') }}" class="nav-item {% if active_page == 'suppliers' %}active{% endif %}">
+          <span class="nav-icon">▣</span>供应商
+        </a>
+        <a href="{{ url_for('approval_center') }}" class="nav-item {% if active_page == 'approval' %}active{% endif %}">
+          <span class="nav-icon">▢</span>审批中心
+        </a>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">报表</div>
+        <a href="{{ url_for('reports') }}" class="nav-item {% if active_page == 'reports' %}active{% endif %}">
+          <span class="nav-icon">▦</span>日报月报
+        </a>
+        <a href="{{ url_for('logs_page') }}" class="nav-item {% if active_page == 'logs' %}active{% endif %}">
+          <span class="nav-icon">▤</span>操作日志
+        </a>
+      </div>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="system-status">
+        <span class="status-dot"></span>
+        <span id="systemStatus">系统运行正常</span>
+      </div>
+      <div style="margin-top:6px;">v2.0.0 | Web Edition</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar-title">
+        <span>{% block header_title %}SMART FACTORY{% endblock %}</span>
+        <span style="color: var(--text-dim); margin: 0 10px;">//</span>
+        <span style="color: var(--text-dim); font-size: 13px;">{% block header_sub %}Prediction-based Maintenance Platform{% endblock %}</span>
+      </div>
+      <div class="topbar-actions">
+        <div class="topbar-time" id="currentTime">{{ now.strftime('%Y-%m-%d %H:%M:%S') }}</div>
+        <button class="btn btn-sm" onclick="triggerCollect()">
+          <span>⚡</span>采集数据
+        </button>
+        <button class="btn btn-sm btn-primary" onclick="triggerAnalysis()">
+          <span>▶</span>健康分析
+        </button>
+      </div>
+    </header>
+    <section class="content">
+      {% block content %}{% endblock %}
+    </section>
+  </main>
+</div>
+
+<div class="modal-overlay" id="globalModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modalTitle">提示</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal()">关闭</button>
+      <button class="btn btn-primary" id="modalConfirm" style="display:none;">确认</button>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/common.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
