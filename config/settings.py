@@ -74,7 +74,8 @@ SCHEDULER_CONFIG = {
 
 NOTIFICATION_CONFIG = {
     'enabled': True,
-    'use_real_email': False,
+    'use_real_email': True,
+    'admin_email': 'admin@factory.com',
     'production_supervisor_email': 'supervisor@factory.com',
     'management_email': 'management@factory.com',
     'inventory_email': 'inventory@factory.com',
@@ -87,8 +88,12 @@ EMAIL_CONFIG = {
     'smtp_port': 465,
     'use_ssl': True,
     'use_tls': False,
+    # ===== 请填写您自己的QQ邮箱信息 =====
+    # 1. QQ邮箱账号
     'username': 'your_email@qq.com',
+    # 2. QQ邮箱SMTP授权码（非登录密码，需在QQ邮箱设置-账户中开启POP3/SMTP服务后获取）
     'password': 'your_smtp_auth_code',
+    # ====================================
     'sender_name': '制造业预测性维护系统',
     'max_retries': 3,
     'retry_interval': 5,

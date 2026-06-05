@@ -99,10 +99,21 @@ class InventoryManager:
             req_no = generate_order_no('PR')
 
             approval_status = 'pending'
-            monthly_budget = 500000.0
-            used_budget = self._get_monthly_used_budget()
-            if used_budget + estimated_cost > monthly_budget * self.budget_threshold:
+            monthly_budget = safe_float(INVENTORY_CONFIG.get('monthly_budget', 500000.0))
+            budget_threshold = safe_float(INVENTORY_CONFIG.get('budget_warning_threshold', 0.8))
+            used_budget = self.get_monthly_budget_usage()
+
+            projected_usage = used_budget + estimated_cost
+            threshold_amount = monthly_budget * budget_threshold
+            budget_usage_pct = (projected_usage / monthly_budget * 100) if monthly_budget > 0 else 0
+
+            if projected_usage > threshold_amount:
                 approval_status = 'needs_approval'
+                logger.info(
+                    f"采购申请 {req_no} 触发预算审批: "
+                    f"已用¥{used_budget:,.2f} + 本次¥{estimated_cost:,.2f} = ¥{projected_usage:,.2f} "
+                    f"> 阈值¥{threshold_amount:,.2f} ({budget_threshold*100:.0f}%), 使用率{budget_usage_pct:.1f}%"
+                )
 
             try:
                 cursor.execute("""
@@ -119,14 +130,17 @@ class InventoryManager:
 
                 requisition = self.get_requisition(req_id)
                 if approval_status == 'needs_approval':
-                    NotificationManager.notify_purchase_approval(requisition)
+                    NotificationManager.notify_purchase_approval(
+                        requisition, budget_pct=f"{budget_usage_pct:.0f}"
+                    )
 
                 op_logger.log(
                     'create_requisition', 'inventory',
-                    f'创建采购申请 {req_no}, 备件: {part["part_code"]}, 数量: {quantity}, 预估: ¥{estimated_cost:.2f}'
+                    f'创建采购申请 {req_no}, 备件: {part["part_code"]}, 数量: {quantity}, '
+                    f'预估: ¥{estimated_cost:.2f}, 状态: {approval_status}'
                 )
 
-                logger.info(f"创建采购申请: {req_no}, 金额: ¥{estimated_cost:.2f}")
+                logger.info(f"创建采购申请: {req_no}, 金额: ¥{estimated_cost:.2f}, 审批状态: {approval_status}")
                 return req_id, req_no
 
             except Exception as e:
@@ -134,15 +148,55 @@ class InventoryManager:
                 cursor.connection.rollback()
                 return None
 
-    def _get_monthly_used_budget(self):
+    def get_monthly_budget_usage(self):
+        """
+        查询本月已使用预算金额
+        统计维度：已通过审批的采购申请 + 已生成采购订单的金额
+        :return: float 本月已使用金额
+        """
         with get_db_cursor() as cursor:
             cursor.execute("""
-                SELECT COALESCE(SUM(estimated_cost), 0) as total
+                SELECT COALESCE(SUM(estimated_cost), 0) as req_total
                 FROM purchase_requisitions
-                WHERE approval_status IN ('approved', 'completed')
+                WHERE approval_status IN ('approved', 'needs_approval', 'pending')
+                AND status IN ('pending', 'processing', 'completed')
                 AND created_at >= date('now', 'start of month')
             """)
-            return safe_float(cursor.fetchone()['total'])
+            req_total = safe_float(cursor.fetchone()['req_total'])
+
+            cursor.execute("""
+                SELECT COALESCE(SUM(total_amount), 0) as po_total
+                FROM purchase_orders
+                WHERE status != 'cancelled'
+                AND created_at >= date('now', 'start of month')
+            """)
+            po_total = safe_float(cursor.fetchone()['po_total'])
+
+        used = max(req_total, po_total)
+        logger.debug(f"本月预算使用: ¥{used:,.2f} (申请:¥{req_total:,.2f}, 订单:¥{po_total:,.2f})")
+        return used
+
+    def get_monthly_budget_info(self):
+        """
+        获取本月完整预算信息
+        :return: dict 包含总预算、已用、剩余、使用率等
+        """
+        monthly_budget = safe_float(INVENTORY_CONFIG.get('monthly_budget', 500000.0))
+        budget_threshold = safe_float(INVENTORY_CONFIG.get('budget_warning_threshold', 0.8))
+        used = self.get_monthly_budget_usage()
+        remaining = max(0, monthly_budget - used)
+        usage_pct = (used / monthly_budget * 100) if monthly_budget > 0 else 0
+
+        return {
+            'monthly_budget': monthly_budget,
+            'budget_threshold': budget_threshold,
+            'threshold_amount': monthly_budget * budget_threshold,
+            'used': used,
+            'remaining': remaining,
+            'usage_pct': round(usage_pct, 2),
+            'is_over_threshold': used > monthly_budget * budget_threshold,
+            'is_over_budget': used >= monthly_budget,
+        }
 
     def get_requisition(self, req_id):
         with get_db_cursor() as cursor:
@@ -156,23 +210,69 @@ class InventoryManager:
             return dict(row) if row else None
 
     def approve_requisition(self, req_id, approver, approved=True):
+        """
+        审批采购申请
+        通过后完整状态流转：
+        1. 更新审批状态
+        2. 自动调用供应商模块生成采购订单
+        3. 自动入库更新备件库存（模拟到货）
+        4. 记录完整操作日志
+        """
         requisition = self.get_requisition(req_id)
         if not requisition:
+            logger.error(f"采购申请 {req_id} 不存在")
             return False
 
-        new_status = 'approved' if approved else 'rejected'
+        new_approval_status = 'approved' if approved else 'rejected'
+        new_req_status = 'completed' if approved else 'rejected'
+
         try:
             with get_db_cursor(commit=True) as cursor:
                 cursor.execute("""
                     UPDATE purchase_requisitions
-                    SET approval_status = ?, approver = ?, approved_at = ?, updated_at = ?
+                    SET approval_status = ?, status = ?, approver = ?, 
+                        approved_at = ?, updated_at = ?
                     WHERE id = ?
-                """, (new_status, approver, now_str() if approved else None, now_str(), req_id))
+                """, (
+                    new_approval_status, new_req_status, approver,
+                    now_str() if approved else None, now_str(), req_id
+                ))
 
             op_logger.log(
                 'approve_requisition', 'inventory',
-                f'采购申请 {requisition["req_no"]} 已{"通过" if approved else "拒绝"}'
+                f'采购申请 {requisition["req_no"]} 已{"通过" if approved else "驳回"} (审批人: {approver})'
             )
+
+            if approved:
+                logger.info(f"采购申请 {requisition['req_no']} 已通过，开始后续流程...")
+
+                try:
+                    from modules.supplier_manager import SupplierManager
+                    supplier_mgr = SupplierManager()
+                    created_orders = supplier_mgr.create_purchase_orders_from_requisition(req_id)
+                    logger.info(f"为申请 {requisition['req_no']} 创建了 {len(created_orders)} 个采购订单")
+
+                    total_qty = sum(o['quantity'] for o in created_orders) if created_orders else requisition.get('quantity', 0)
+                    if total_qty > 0:
+                        first_po_no = created_orders[0]['order_no'] if created_orders else requisition['req_no']
+                        stock_ok = self.update_stock(
+                            part_id=requisition['part_id'],
+                            quantity=total_qty,
+                            transaction_type='in',
+                            reference_no=first_po_no,
+                            operator='system_auto',
+                            note=f'采购申请 {requisition["req_no"]} 审批通过自动入库'
+                        )
+                        if stock_ok:
+                            logger.info(
+                                f"申请 {requisition['req_no']} 已自动入库: "
+                                f"备件ID={requisition['part_id']}, 数量={total_qty}"
+                            )
+                        else:
+                            logger.warning(f"申请 {requisition['req_no']} 自动入库失败")
+                except Exception as flow_e:
+                    logger.error(f"采购申请审批后后续流程异常: {flow_e}")
+
             return True
         except Exception as e:
             logger.error(f"审批采购申请失败: {e}")

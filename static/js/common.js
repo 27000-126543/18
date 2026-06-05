@@ -151,6 +151,26 @@ function approvalStatusTag(s) {
   return `<span class="tag ${map[s] || 'tag-info'}">${name[s] || s}</span>`;
 }
 
+function sendTestEmail() {
+  const btn = event.target.closest('button');
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<span class="loading-spinner"></span> 发送中';
+  btn.disabled = true;
+  apiPost('/api/email/test', {}, (d) => {
+    btn.innerHTML = orig;
+    btn.disabled = false;
+    if (d.success) {
+      showModal('邮件发送成功',
+        `<p style="color:var(--cyan-primary);">✓ ${d.message}</p>` +
+        `<p style="color:var(--text-dim);font-size:13px;margin-top:8px;">请登录收件邮箱查看测试邮件</p>`);
+    } else {
+      showModal('邮件发送失败',
+        `<p style="color:var(--orange-alert);">✗ ${d.message}</p>` +
+        `<p style="color:var(--text-dim);font-size:13px;margin-top:8px;">请检查 config/settings.py 中的 EMAIL_CONFIG 配置</p>`);
+    }
+  });
+}
+
 document.addEventListener('click', e => {
   if (e.target.id === 'globalModal') closeModal();
 });

@@ -27,6 +27,19 @@ from utils.helpers import now_str
 from models.schema import init_database
 
 
+def percentile(data, p):
+    """计算分位数（p: 0-100）"""
+    if not data:
+        return 0.0
+    sorted_data = sorted(data)
+    k = (len(sorted_data) - 1) * (p / 100.0)
+    f = int(k)
+    c = min(f + 1, len(sorted_data) - 1)
+    if f == c:
+        return sorted_data[f]
+    return sorted_data[f] + (sorted_data[c] - sorted_data[f]) * (k - f)
+
+
 class StressTester:
     def __init__(self):
         self.results = defaultdict(list)
@@ -60,8 +73,8 @@ class StressTester:
             'collection_time': now_str()
         }
 
-    def benchmark_data_insert(self, num_equipments=1000, records_per_equipment=100,
-                              num_threads=100, batch_size=100):
+    def benchmark_data_insert(self, num_equipments=2000, records_per_equipment=500,
+                              num_threads=200, batch_size=500):
         """
         测试批量传感器数据插入性能
         :param num_equipments: 模拟设备数量
@@ -69,11 +82,13 @@ class StressTester:
         :param num_threads: 并发线程数
         :param batch_size: 每批插入条数
         """
+        total = num_equipments * records_per_equipment
         print("\n" + "=" * 70)
         print(f"  [压力测试 1] 传感器数据批量写入")
-        print(f"  设备数: {num_equipments} | 每设备数据: {records_per_equipment} 条")
+        print(f"  设备数: {num_equipments:,} 台 | 每设备: {records_per_equipment:,} 条/天")
         print(f"  线程数: {num_threads} | 批量大小: {batch_size}")
-        print(f"  总数据量: {num_equipments * records_per_equipment:,} 条")
+        print(f"  总数据量: {total:,} 条 (约{total/10000:.0f}万)")
+        print(f"  目标量级: 2000台×500条=100万点/天")
         print("=" * 70)
 
         total_records = num_equipments * records_per_equipment
@@ -135,27 +150,42 @@ class StressTester:
         elapsed_total = time.perf_counter() - start_time
         latencies = self.results.get('insert_latency_ms', [])
 
+        qps = success / elapsed_total if elapsed_total > 0 else 0
         print(f"\n\n  ✓ 完成: 成功 {success:,} 条, 失败 {failed} 批次")
         print(f"  总耗时: {elapsed_total:.2f} 秒")
-        print(f"  吞吐量: {success / elapsed_total:,.1f} 条/秒 (QPS)")
+        print(f"  吞吐量: {qps:,.1f} 条/秒 (QPS)")
         if latencies:
-            print(f"  延迟 P50: {statistics.median(latencies):.2f} ms/批")
-            sorted_lat = sorted(latencies)
-            p95_idx = int(len(sorted_lat) * 0.95)
-            print(f"  延迟 P95: {sorted_lat[p95_idx]:.2f} ms/批")
-            print(f"  平均延迟: {statistics.mean(latencies):.2f} ms/批")
+            p50 = percentile(latencies, 50)
+            p90 = percentile(latencies, 90)
+            p95 = percentile(latencies, 95)
+            p99 = percentile(latencies, 99)
+            avg_lat = statistics.mean(latencies)
+            print(f"  ┌─────────────────────────────────────┐")
+            print(f"  │  延迟分位统计 (每批{batch_size}条)        │")
+            print(f"  ├─────────────────────────────────────┤")
+            print(f"  │  P50 中位数 : {p50:>8.2f} ms            │")
+            print(f"  │  P90        : {p90:>8.2f} ms            │")
+            print(f"  │  P95        : {p95:>8.2f} ms            │")
+            print(f"  │  P99        : {p99:>8.2f} ms            │")
+            print(f"  │  平均延迟    : {avg_lat:>8.2f} ms            │")
+            print(f"  └─────────────────────────────────────┘")
         print(f"  错误数: {len(self.errors)}")
         if self.errors[:3]:
             print(f"  错误示例: {self.errors[:3]}")
 
         return {
             'test': 'data_insert',
-            'qps': success / elapsed_total,
-            'p50_ms': statistics.median(latencies) if latencies else 0,
-            'p95_ms': sorted_lat[p95_idx] if latencies else 0,
+            'qps': qps,
+            'p50_ms': p50 if latencies else 0,
+            'p90_ms': p90 if latencies else 0,
+            'p95_ms': p95 if latencies else 0,
+            'p99_ms': p99 if latencies else 0,
+            'avg_latency_ms': statistics.mean(latencies) if latencies else 0,
             'total_records': success,
             'errors': len(self.errors),
-            'elapsed_seconds': elapsed_total
+            'elapsed_seconds': elapsed_total,
+            'target_daily': 1000000,
+            'estimated_daily': qps * 86400
         }
 
     def benchmark_query_performance(self, num_queries=1000, num_threads=20):
@@ -217,23 +247,35 @@ class StressTester:
 
         elapsed_total = time.perf_counter() - start_time
         latencies = self.results.get('query_latency_ms', [])
+        qps = success / elapsed_total if elapsed_total > 0 else 0
 
         print(f"\n\n  ✓ 完成: 成功 {success} 次, 失败 {failed} 次")
         print(f"  总耗时: {elapsed_total:.2f} 秒")
-        print(f"  吞吐量: {success / elapsed_total:,.1f} QPS")
+        print(f"  吞吐量: {qps:,.1f} QPS")
         if latencies:
-            print(f"  延迟 P50: {statistics.median(latencies):.2f} ms")
-            sorted_lat = sorted(latencies)
-            p95_idx = min(len(sorted_lat) - 1, int(len(sorted_lat) * 0.95))
-            print(f"  延迟 P95: {sorted_lat[p95_idx]:.2f} ms")
-            print(f"  延迟 P99: {sorted_lat[min(len(sorted_lat)-1, int(len(sorted_lat)*0.99))]:.2f} ms")
-            print(f"  平均延迟: {statistics.mean(latencies):.2f} ms")
+            p50 = percentile(latencies, 50)
+            p90 = percentile(latencies, 90)
+            p95 = percentile(latencies, 95)
+            p99 = percentile(latencies, 99)
+            avg_lat = statistics.mean(latencies)
+            print(f"  ┌─────────────────────────────────────┐")
+            print(f"  │  查询延迟分位统计                      │")
+            print(f"  ├─────────────────────────────────────┤")
+            print(f"  │  P50 中位数 : {p50:>8.2f} ms            │")
+            print(f"  │  P90        : {p90:>8.2f} ms            │")
+            print(f"  │  P95        : {p95:>8.2f} ms            │")
+            print(f"  │  P99        : {p99:>8.2f} ms            │")
+            print(f"  │  平均延迟    : {avg_lat:>8.2f} ms            │")
+            print(f"  └─────────────────────────────────────┘")
 
         return {
             'test': 'query',
-            'qps': success / elapsed_total,
-            'p50_ms': statistics.median(latencies) if latencies else 0,
-            'p95_ms': sorted_lat[p95_idx] if latencies else 0,
+            'qps': qps,
+            'p50_ms': p50 if latencies else 0,
+            'p90_ms': p90 if latencies else 0,
+            'p95_ms': p95 if latencies else 0,
+            'p99_ms': p99 if latencies else 0,
+            'avg_latency_ms': statistics.mean(latencies) if latencies else 0,
             'total_queries': success,
             'errors': failed,
             'elapsed_seconds': elapsed_total
@@ -329,25 +371,28 @@ class StressTester:
         """运行完整压力测试套件"""
         print()
         print("╔" + "═" * 68 + "╗")
-        print("║" + " " * 15 + "制造业预测性维护系统 - 高并发压力测试" + " " * 16 + "║")
+        print("║" + " " * 13 + "制造业预测性维护系统 - 高并发压力测试 v2.0" + " " * 13 + "║")
         print("╚" + "═" * 68 + "╝")
+        print()
+        print("  目标量级: 2,000台设备 × 500点/天 = 1,000,000条/天 (100万点/天)")
+        print("  输出指标: QPS吞吐量 | P50/P90/P95/P99延迟分位 | 错误率")
 
         init_database()
 
         all_results = []
         try:
             r1 = self.benchmark_data_insert(
-                num_equipments=500,
-                records_per_equipment=200,
-                num_threads=80,
-                batch_size=200
+                num_equipments=2000,
+                records_per_equipment=500,
+                num_threads=200,
+                batch_size=500
             )
             all_results.append(r1)
 
-            r2 = self.benchmark_query_performance(num_queries=2000, num_threads=30)
+            r2 = self.benchmark_query_performance(num_queries=5000, num_threads=50)
             all_results.append(r2)
 
-            r3 = self.benchmark_concurrent_read_write(duration_seconds=20, read_threads=20, write_threads=15)
+            r3 = self.benchmark_concurrent_read_write(duration_seconds=30, read_threads=50, write_threads=30)
             all_results.append(r3)
 
         except Exception as e:
@@ -358,29 +403,33 @@ class StressTester:
         print("  📊 压力测试汇总报告")
         print("=" * 70)
         for r in all_results:
-            print(f"\n  [{r['test']}]")
+            print(f"\n  ═══ [{r['test']}] ═══")
             for k, v in r.items():
                 if k != 'test':
                     if isinstance(v, float):
-                        print(f"    {k}: {v:,.2f}")
+                        print(f"    {k:25s}: {v:>12,.2f}")
                     else:
-                        print(f"    {k}: {v:,}")
+                        print(f"    {k:25s}: {v:>12,}")
 
         report_path = os.path.join('reports', f'stress_test_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json')
         os.makedirs('reports', exist_ok=True)
         with open(report_path, 'w', encoding='utf-8') as f:
             json.dump(all_results, f, ensure_ascii=False, indent=2)
-        print(f"\n  📄 详细报告已保存至: {report_path}")
+        print(f"\n  📄 详细JSON报告已保存至: {report_path}")
 
-        target_daily = 200000
+        target_daily = 1000000
         est_daily_capacity = 0
         for r in all_results:
             if r['test'] == 'data_insert':
                 est_daily_capacity = r['qps'] * 86400
-                print(f"\n  🎯 目标日吞吐量: {target_daily:,} 条/天")
-                print(f"  📈 理论日吞吐量: {est_daily_capacity:,.0f} 条/天")
                 ratio = est_daily_capacity / target_daily * 100
-                print(f"  ✅ 达成率: {ratio:.1f}% {'(达标 ✓)' if ratio >= 100 else '(未达标 ✗)'}")
+                status = '(达标 ✓)' if ratio >= 100 else '(未达标 ✗)'
+                print()
+                print(f"  ┌─────────────────────────────────────────────────────┐")
+                print(f"  │  🎯 目标日吞吐量:  {target_daily:>12,} 条/天            │")
+                print(f"  │  📈 理论日吞吐量:  {est_daily_capacity:>12,.0f} 条/天        │")
+                print(f"  │  📊 达成率:        {ratio:>11.1f}% {status}         │")
+                print(f"  └─────────────────────────────────────────────────────┘")
                 break
 
         print("\n" + "=" * 70)

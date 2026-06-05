@@ -26,6 +26,7 @@ from core.logger import logger
 from core.database import get_db_cursor
 from utils.helpers import today_str, now_str, safe_int, safe_float, parse_datetime
 from config.settings import WEB_CONFIG, NOTIFICATION_CONFIG
+from core.email_service import email_service
 
 
 def create_app():
@@ -396,29 +397,32 @@ def create_app():
     def export_daily_report(fmt):
         from utils.dependency_installer import ensure_excel_deps, ensure_pdf_deps
         date = request.args.get('date', today_str())
+        report_dir = app.config.get('REPORT_DIR', 'reports')
+        os.makedirs(report_dir, exist_ok=True)
 
         if fmt == 'excel':
             if not ensure_excel_deps():
-                return "openpyxl安装失败", 500
-            import csv
+                return "openpyxl安装失败，请安装后重试", 500
             stats = daily_report._collect_daily_stats(date)
-            filepath = os.path.join(app.config.get('REPORT_DIR', 'reports'),
-                                    f'daily_report_{date}.csv')
-            os.makedirs(os.path.dirname(filepath), exist_ok=True)
-            with open(filepath, 'w', newline='', encoding='utf-8-sig') as f:
-                writer = csv.writer(f)
-                writer.writerow(['指标', '数值'])
-                for k, v in stats.items():
-                    writer.writerow([k, v])
+            filepath = os.path.join(report_dir, f'daily_report_{date}.xlsx')
+            ok = daily_report.export_excel(stats, filepath)
+            if not ok or not os.path.exists(filepath):
+                return "Excel导出失败，请查看日志", 500
             return send_file(filepath, as_attachment=True,
-                             download_name=f'daily_report_{date}.csv')
+                             download_name=f'daily_report_{date}.xlsx',
+                             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
         elif fmt == 'pdf':
             if not ensure_pdf_deps():
-                return "reportlab安装失败", 500
-            stats, path = daily_report.generate_daily_report(date)
-            return send_file(path, as_attachment=True,
-                             download_name=f'daily_report_{date}.txt')
+                return "reportlab安装失败，请安装后重试", 500
+            stats = daily_report._collect_daily_stats(date)
+            filepath = os.path.join(report_dir, f'daily_report_{date}.pdf')
+            ok = daily_report.export_pdf(stats, filepath)
+            if not ok or not os.path.exists(filepath):
+                return "PDF导出失败，请查看日志", 500
+            return send_file(filepath, as_attachment=True,
+                             download_name=f'daily_report_{date}.pdf',
+                             mimetype='application/pdf')
 
         abort(404)
 
@@ -437,27 +441,31 @@ def create_app():
         from utils.dependency_installer import ensure_excel_deps, ensure_pdf_deps
         from utils.helpers import month_str
         month = request.args.get('month', month_str())
+        report_dir = app.config.get('REPORT_DIR', 'reports')
+        os.makedirs(report_dir, exist_ok=True)
 
         if fmt == 'excel':
-            ensure_excel_deps()
-            stats, pdf_path, excel_path = monthly_report.generate_monthly_report(month)
-            if os.path.exists(excel_path):
-                return send_file(excel_path, as_attachment=True)
-            else:
-                text_path = pdf_path.replace('.pdf', '.txt')
-                if os.path.exists(text_path):
-                    return send_file(text_path, as_attachment=True,
-                                     download_name=f'monthly_report_{month}.txt')
+            if not ensure_excel_deps():
+                return "openpyxl安装失败，请安装后重试", 500
+            stats = monthly_report._collect_monthly_stats(month)
+            filepath = os.path.join(report_dir, f'monthly_report_{month}.xlsx')
+            ok = monthly_report.export_excel(stats, filepath)
+            if not ok or not os.path.exists(filepath):
+                return "Excel导出失败，请查看日志", 500
+            return send_file(filepath, as_attachment=True,
+                             download_name=f'monthly_report_{month}.xlsx',
+                             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         elif fmt == 'pdf':
-            ensure_pdf_deps()
-            stats, pdf_path, excel_path = monthly_report.generate_monthly_report(month)
-            if os.path.exists(pdf_path):
-                return send_file(pdf_path, as_attachment=True)
-            else:
-                text_path = pdf_path.replace('.pdf', '.txt')
-                if os.path.exists(text_path):
-                    return send_file(text_path, as_attachment=True,
-                                     download_name=f'monthly_report_{month}.txt')
+            if not ensure_pdf_deps():
+                return "reportlab安装失败，请安装后重试", 500
+            stats = monthly_report._collect_monthly_stats(month)
+            filepath = os.path.join(report_dir, f'monthly_report_{month}.pdf')
+            ok = monthly_report.export_pdf(stats, filepath)
+            if not ok or not os.path.exists(filepath):
+                return "PDF导出失败，请查看日志", 500
+            return send_file(filepath, as_attachment=True,
+                             download_name=f'monthly_report_{month}.pdf',
+                             mimetype='application/pdf')
         abort(404)
 
     @app.route('/equipment')
@@ -561,6 +569,12 @@ def create_app():
             work_order_mgr.create_orders_for_high_risk(high_risk)
         return jsonify({'analyzed': len(results), 'high_risk': len(high_risk)})
 
+    @app.route('/api/email/test', methods=['GET', 'POST'])
+    def api_email_test():
+        to_email = request.args.get('to') or request.form.get('to')
+        success, message = email_service.send_test_email(to_email)
+        return jsonify({'success': success, 'message': message})
+
     @app.route('/suppliers')
     def suppliers():
         suppliers_list = supplier_mgr.list_suppliers()
@@ -591,9 +605,28 @@ def main():
     print(f"  调试模式: {'开启' if WEB_CONFIG['debug'] else '关闭'}")
     print()
     print("  邮件配置说明:")
-    print(f"    当前状态: {'真实邮件' if NOTIFICATION_CONFIG.get('use_real_email') else '模拟模式'}")
-    print("    修改 config/settings.py 中 EMAIL_CONFIG 和 NOTIFICATION_CONFIG 启用真实SMTP")
+    print(f"    当前状态: {'真实邮件模式' if NOTIFICATION_CONFIG.get('use_real_email') else '模拟模式'}")
+    from config.settings import EMAIL_CONFIG
+    if EMAIL_CONFIG.get('username') and EMAIL_CONFIG['username'] != 'your_email@qq.com':
+        print(f"    发件账号: {EMAIL_CONFIG['username']}")
+    else:
+        print("    ⚠️  发件账号未配置! 请编辑 config/settings.py 中 EMAIL_CONFIG.username")
+    if EMAIL_CONFIG.get('password') and EMAIL_CONFIG['password'] != 'your_smtp_auth_code':
+        print("    SMTP授权码: 已配置 ✓")
+    else:
+        print("    ⚠️  SMTP授权码未配置! 请编辑 config/settings.py 中 EMAIL_CONFIG.password")
     print()
+
+    if NOTIFICATION_CONFIG.get('use_real_email'):
+        print("  📧 正在发送启动测试邮件...")
+        test_ok, test_msg = email_service.send_test_email()
+        if test_ok:
+            print(f"    ✓ {test_msg}")
+        else:
+            print(f"    ✗ {test_msg}")
+            print("    提示: 点击Web界面右上角「测试邮件」按钮可随时重试")
+        print()
+
     print("  按 Ctrl+C 停止服务器")
     print()
 

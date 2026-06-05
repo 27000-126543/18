@@ -4,6 +4,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.header import Header
 from email.utils import formataddr
+from datetime import datetime
 
 from core.logger import logger
 from config.settings import EMAIL_CONFIG, NOTIFICATION_CONFIG
@@ -261,6 +262,77 @@ class EmailService:
 
         logger.error(f"邮件发送最终失败: {to_email} - {subject}")
         return False
+
+    def send_test_email(self, to_email=None):
+        """发送测试邮件，验证SMTP配置是否正确"""
+        if to_email is None:
+            to_email = self.notification_config.get(
+                'admin_email', self.config.get('username', 'admin@factory.com')
+            )
+
+        if not self.notification_config.get('use_real_email', False):
+            logger.info("[邮件测试] 真实邮件模式未启用，已跳过")
+            return False, "真实邮件模式未启用，请在settings.py中设置 use_real_email=True"
+
+        if not self.config.get('username') or self.config['username'] == 'your_email@qq.com':
+            msg = "SMTP未配置：请在 config/settings.py 的 EMAIL_CONFIG 中填入您的QQ邮箱账号和SMTP授权码"
+            logger.warning("[邮件测试] " + msg)
+            return False, msg
+
+        if not self.config.get('password') or self.config['password'] == 'your_smtp_auth_code':
+            msg = "SMTP授权码未配置：请在 config/settings.py 的 EMAIL_CONFIG.password 中填入QQ邮箱SMTP授权码"
+            logger.warning("[邮件测试] " + msg)
+            return False, msg
+
+        subject = "【测试邮件】制造业预测性维护系统 - SMTP连接验证"
+        test_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        html_body = f"""
+        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;">
+            <div style="background:linear-gradient(135deg,#00d4ff 0%,#0066ff 100%);padding:24px;border-radius:8px 8px 0 0;">
+                <h2 style="color:white;margin:0;font-size:20px;">✉️ 邮件服务测试成功</h2>
+            </div>
+            <div style="background:#fff;padding:24px;border:1px solid #e5e7eb;border-radius:0 0 8px 8px;">
+                <p style="margin:0 0 16px 0;color:#1f2937;">
+                    恭喜您！SMTP邮件服务已配置成功，系统可以正常发送真实邮件。
+                </p>
+                <div style="background:#f0f9ff;padding:16px;border-radius:6px;margin:16px 0;">
+                    <p style="margin:4px 0;"><strong>SMTP服务器：</strong>{self.config['smtp_server']}:{self.config['smtp_port']}</p>
+                    <p style="margin:4px 0;"><strong>发件人邮箱：</strong>{self.config['username']}</p>
+                    <p style="margin:4px 0;"><strong>测试时间：</strong>{test_time}</p>
+                </div>
+                <p style="margin:0;color:#6b7280;font-size:13px;">
+                    这是一封系统自动发送的测试邮件，证明工单升级、库存预警、采购审批等通知邮件功能工作正常。
+                </p>
+            </div>
+            <div style="text-align:center;color:#9ca3af;font-size:12px;margin-top:16px;">
+                制造业预测性维护系统 · 自动通知
+            </div>
+        </div>
+        """
+
+        try:
+            msg = MIMEMultipart('alternative')
+            msg['From'] = formataddr(
+                (str(Header(self.config.get('sender_name', '系统通知'), 'utf-8')),
+                 self.config['username'])
+            )
+            msg['To'] = to_email
+            msg['Subject'] = Header(subject, 'utf-8')
+            msg.attach(MIMEText(html_body, 'html', 'utf-8'))
+
+            smtp = self._create_smtp_connection()
+            if not smtp:
+                return False, "SMTP连接失败，请检查邮箱账号、授权码和网络设置"
+
+            smtp.sendmail(self.config['username'], [to_email], msg.as_string())
+            smtp.quit()
+
+            logger.info(f"[邮件测试] 测试邮件发送成功 -> {to_email}")
+            return True, f"测试邮件已成功发送至 {to_email}，请查收"
+        except Exception as e:
+            err_msg = f"邮件发送失败: {str(e)}"
+            logger.error(f"[邮件测试] {err_msg}")
+            return False, err_msg
 
 
 email_service = EmailService()

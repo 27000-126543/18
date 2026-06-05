@@ -296,3 +296,15 @@ def init_database():
             CREATE INDEX IF NOT EXISTS idx_logs_time 
                 ON operation_logs(created_at);
         """)
+
+    with get_db_cursor(commit=True) as cursor:
+        try:
+            cursor.execute("PRAGMA table_info(daily_reports)")
+            cols = {row['name'] for row in cursor.fetchall()}
+            if 'report_path_pdf' not in cols:
+                cursor.execute("ALTER TABLE daily_reports ADD COLUMN report_path_pdf TEXT")
+            if 'report_path_excel' not in cols:
+                cursor.execute("ALTER TABLE daily_reports ADD COLUMN report_path_excel TEXT")
+        except Exception as e:
+            from core.logger import logger
+            logger.debug(f"daily_reports迁移跳过或完成: {e}")

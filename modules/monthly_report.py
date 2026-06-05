@@ -162,10 +162,10 @@ class MonthlyReportGenerator:
         try:
             try:
                 import openpyxl
-                from openpyxl.styles import Font, PatternFill, Alignment
-            except ImportError:
-                logger.warning("openpyxl 未安装, 使用CSV格式导出Excel")
-                return self.export_csv(stats, filepath.replace('.xlsx', '.csv'))
+                from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+            except ImportError as e:
+                logger.error(f"导出月报Excel失败: openpyxl未安装 - {e}")
+                return False
 
             wb = openpyxl.Workbook()
 
@@ -237,11 +237,8 @@ class MonthlyReportGenerator:
                 from reportlab.lib import colors
                 from reportlab.pdfbase import pdfmetrics
                 from reportlab.pdfbase.ttfonts import TTFont
-            except ImportError:
-                logger.warning("reportlab 未安装, 使用文本格式保存PDF报告")
-                text_content = self._generate_text_report(stats)
-                with open(filepath.replace('.pdf', '.txt'), 'w', encoding='utf-8') as f:
-                    f.write(text_content)
+            except ImportError as e:
+                logger.error(f"导出月报PDF失败: reportlab未安装 - {e}")
                 return False
 
             doc = SimpleDocTemplate(filepath, pagesize=A4)
@@ -301,9 +298,6 @@ class MonthlyReportGenerator:
             return True
         except Exception as e:
             logger.error(f"导出PDF失败: {e}")
-            text_content = self._generate_text_report(stats)
-            with open(filepath.replace('.pdf', '.txt'), 'w', encoding='utf-8') as f:
-                f.write(text_content)
             return False
 
     def generate_monthly_report(self, report_month=None):
