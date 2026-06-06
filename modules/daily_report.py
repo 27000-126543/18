@@ -158,27 +158,43 @@ class DailyReportGenerator:
             return False
 
         try:
+            _existing = set(pdfmetrics.getRegisteredFontNames())
+
             font_candidates = [
-                ('/System/Library/Fonts/PingFang.ttc', 0, 'PingFangSC'),
-                ('/System/Library/Fonts/STHeiti Light.ttc', 0, 'STHeiti'),
-                ('/System/Library/Fonts/STHeiti Medium.ttc', 0, 'STHeitiMedium'),
-                ('/Library/Fonts/SimSun.ttf', 0, 'SimSun'),
-                ('/System/Library/Fonts/Hiragino Sans GB.ttc', 0, 'HiraginoSansGB'),
+                '/System/Library/Fonts/PingFang.ttc',
+                '/System/Library/Fonts/STHeiti Light.ttc',
+                '/System/Library/Fonts/STHeiti Medium.ttc',
+                '/System/Library/Fonts/Hiragino Sans GB.ttc',
+                '/Library/Fonts/SimSun.ttf',
+                '/System/Library/Fonts/Supplemental/Songti.ttc',
+                '/System/Library/Fonts/Supplemental/Arial Unicode.ttf',
             ]
             registered_name = 'Helvetica'
-            for font_path, sub_idx, font_name in font_candidates:
-                if os.path.exists(font_path):
+            _font_alias_idx = 0
+            for font_path in font_candidates:
+                if not os.path.exists(font_path):
+                    continue
+                is_ttc = font_path.lower().endswith('.ttc')
+                sub_indices = [0, 1, 2] if is_ttc else [0]
+                for sub_idx in sub_indices:
                     try:
-                        if font_path.lower().endswith('.ttc'):
-                            pdfmetrics.registerFont(TTFont(font_name, font_path, subfontIndex=sub_idx))
+                        alias = f'DRF_{_font_alias_idx}'
+                        while alias in _existing:
+                            _font_alias_idx += 1
+                            alias = f'DRF_{_font_alias_idx}'
+                        if is_ttc:
+                            pdfmetrics.registerFont(TTFont(alias, font_path, subfontIndex=sub_idx))
                         else:
-                            pdfmetrics.registerFont(TTFont(font_name, font_path))
-                        registered_name = font_name
-                        logger.debug(f"PDF中文字体已注册: {font_name} <- {font_path}")
+                            pdfmetrics.registerFont(TTFont(alias, font_path))
+                        registered_name = alias
+                        _existing.add(alias)
+                        logger.debug(f"日报PDF中文字体已注册: alias={alias}, subIdx={sub_idx} <- {os.path.basename(font_path)}")
                         break
                     except Exception as fe:
-                        logger.debug(f"尝试注册字体 {font_path} 失败: {fe}")
+                        logger.debug(f"日报字体注册尝试失败 {font_path} idx={sub_idx}: {fe}")
                         continue
+                if registered_name != 'Helvetica':
+                    break
 
             doc = SimpleDocTemplate(filepath, pagesize=A4)
             styles = getSampleStyleSheet()
@@ -383,36 +399,6 @@ class DailyReportGenerator:
             stats['high_risk_equipments'] = safe_int(cursor.fetchone()['cnt'])
 
         return stats
-
-    def _generate_text_report(self, stats):
-        lines = []
-        lines.append("=" * 60)
-        lines.append(f"  制造业设备预测性维护与备件管理日报")
-        lines.append(f"  报告日期: {stats['report_date']}")
-        lines.append("=" * 60)
-        lines.append("")
-        lines.append("【设备概况】")
-        lines.append(f"  设备总数: {stats['total_equipments']} 台")
-        lines.append(f"  活跃设备: {stats['active_equipments']} 台")
-        lines.append(f"  高风险设备: {stats['high_risk_equipments']} 台")
-        lines.append("")
-        lines.append("【故障统计】")
-        lines.append(f"  今日异常数据点: {stats['fault_count']} 个")
-        lines.append(f"  设备故障率: {stats['fault_rate']:.2f}%")
-        lines.append(f"  平均修复时间: {stats['avg_repair_time_hours']:.2f} 小时")
-        lines.append("")
-        lines.append("【工单状态】")
-        lines.append(f"  待处理工单: {stats['pending_work_orders']} 个")
-        lines.append(f"  已完成工单: {stats['completed_work_orders']} 个")
-        lines.append(f"  今日维护成本: ¥{stats['total_maintenance_cost']:.2f}")
-        lines.append("")
-        lines.append("【库存状态】")
-        lines.append(f"  低库存备件: {stats['low_stock_items']} 个")
-        lines.append("")
-        lines.append("=" * 60)
-        lines.append(f"  生成时间: {now_str()}")
-        lines.append("=" * 60)
-        return '\n'.join(lines)
 
     def generate_daily_report(self, report_date=None):
         if not report_date:

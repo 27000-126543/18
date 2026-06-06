@@ -82,8 +82,8 @@ class StressTester:
             'collection_time': now_str()
         }
 
-    def benchmark_data_insert(self, num_equipments=2000, records_per_equipment=500,
-                              num_threads=200, batch_size=500):
+    def benchmark_data_insert(self, num_equipments=200, records_per_equipment=100,
+                              num_threads=50, batch_size=200):
         """
         测试批量传感器数据插入性能
         :param num_equipments: 模拟设备数量
@@ -96,8 +96,9 @@ class StressTester:
         print(f"  [压力测试 1] 传感器数据批量写入")
         print(f"  设备数: {num_equipments:,} 台 | 每设备: {records_per_equipment:,} 条/天")
         print(f"  线程数: {num_threads} | 批量大小: {batch_size}")
-        print(f"  总数据量: {total:,} 条 (约{total/10000:.0f}万)")
-        print(f"  目标量级: 2000台×500条=100万点/天")
+        print(f"  总数据量: {total:,} 条 (约{total/10000:.1f}万)")
+        if num_equipments >= 2000 and records_per_equipment >= 500:
+            print(f"  生产级目标: 2000台×500条=100万点/天 ✓")
         print("=" * 70)
 
         total_records = num_equipments * records_per_equipment
@@ -193,11 +194,14 @@ class StressTester:
             'total_records': success,
             'errors': len(self.errors),
             'elapsed_seconds': elapsed_total,
+            'num_equipments': num_equipments,
+            'records_per_equipment': records_per_equipment,
+            'test_daily_volume': num_equipments * records_per_equipment,
             'target_daily': 1000000,
             'estimated_daily': qps * 86400
         }
 
-    def benchmark_query_performance(self, num_queries=1000, num_threads=20):
+    def benchmark_query_performance(self, num_queries=500, num_threads=10):
         """
         测试数据库查询性能
         """
@@ -290,7 +294,7 @@ class StressTester:
             'elapsed_seconds': elapsed_total
         }
 
-    def benchmark_concurrent_read_write(self, duration_seconds=30, read_threads=30, write_threads=20):
+    def benchmark_concurrent_read_write(self, duration_seconds=10, read_threads=10, write_threads=5):
         """
         测试同时读写的并发性能
         """

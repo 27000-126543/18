@@ -101,37 +101,6 @@ class MonthlyReportGenerator:
 
         return stats
 
-    def _generate_text_report(self, stats):
-        lines = []
-        lines.append("=" * 70)
-        lines.append(f"  制造业设备生命周期成本分析月度报告")
-        lines.append(f"  报告周期: {stats['report_month']}")
-        lines.append("=" * 70)
-        lines.append("")
-        lines.append("【成本汇总】")
-        lines.append(f"  设备原值总额: ¥{stats['total_equipment_cost']:,.2f}")
-        lines.append(f"  本月维护成本: ¥{stats['total_maintenance_cost']:,.2f}")
-        lines.append(f"  本月备件成本: ¥{stats['total_parts_cost']:,.2f}")
-        lines.append(f"  生命周期总成本: ¥{stats['total_lifecycle_cost']:,.2f}")
-        lines.append("")
-        lines.append("【运行指标】")
-        lines.append(f"  平均故障率: {stats['avg_failure_rate']:.2f}%")
-        lines.append(f"  平均无故障时间 (MTBF): {stats['avg_mtbf_hours']:.2f} 小时")
-        lines.append(f"  平均修复时间 (MTTR): {stats['avg_mttr_hours']:.2f} 小时")
-        lines.append(f"  设备利用率: {stats['equipment_utilization']:.2f}%")
-        lines.append("")
-        lines.append("【设备明细】")
-        lines.append(f"  {'设备编号':<15} {'设备名称':<20} {'类型':<10} {'工单数量':>8} {'维护成本':>12} {'MTTR(h)':>8}")
-        lines.append("  " + "-" * 75)
-        for eq in stats['equipment_details'][:50]:
-            lines.append(f"  {eq['equipment_code']:<15} {eq['name'][:20]:<20} {eq['type'][:10]:<10} "
-                         f"{eq['work_order_count']:>8} ¥{eq['maintenance_cost']:>10,.2f} {eq['avg_mttr']:>8.2f}")
-        lines.append("")
-        lines.append("=" * 70)
-        lines.append(f"  生成时间: {now_str()}")
-        lines.append("=" * 70)
-        return '\n'.join(lines)
-
     def export_csv(self, stats, filepath):
         try:
             with open(filepath, 'w', newline='', encoding='utf-8-sig') as f:
@@ -241,27 +210,43 @@ class MonthlyReportGenerator:
                 logger.error(f"导出月报PDF失败: reportlab未安装 - {e}")
                 return False
 
+            _existing = set(pdfmetrics.getRegisteredFontNames())
+
             font_candidates = [
-                ('/System/Library/Fonts/PingFang.ttc', 0, 'PingFangSC'),
-                ('/System/Library/Fonts/STHeiti Light.ttc', 0, 'STHeiti'),
-                ('/System/Library/Fonts/STHeiti Medium.ttc', 0, 'STHeitiMedium'),
-                ('/Library/Fonts/SimSun.ttf', 0, 'SimSun'),
-                ('/System/Library/Fonts/Hiragino Sans GB.ttc', 0, 'HiraginoSansGB'),
+                '/System/Library/Fonts/PingFang.ttc',
+                '/System/Library/Fonts/STHeiti Light.ttc',
+                '/System/Library/Fonts/STHeiti Medium.ttc',
+                '/System/Library/Fonts/Hiragino Sans GB.ttc',
+                '/Library/Fonts/SimSun.ttf',
+                '/System/Library/Fonts/Supplemental/Songti.ttc',
+                '/System/Library/Fonts/Supplemental/Arial Unicode.ttf',
             ]
             registered_name = 'Helvetica'
-            for font_path, sub_idx, font_name in font_candidates:
-                if os.path.exists(font_path):
+            _font_alias_idx = 0
+            for font_path in font_candidates:
+                if not os.path.exists(font_path):
+                    continue
+                is_ttc = font_path.lower().endswith('.ttc')
+                sub_indices = [0, 1, 2] if is_ttc else [0]
+                for sub_idx in sub_indices:
                     try:
-                        if font_path.lower().endswith('.ttc'):
-                            pdfmetrics.registerFont(TTFont(font_name, font_path, subfontIndex=sub_idx))
+                        alias = f'MRF_{_font_alias_idx}'
+                        while alias in _existing:
+                            _font_alias_idx += 1
+                            alias = f'MRF_{_font_alias_idx}'
+                        if is_ttc:
+                            pdfmetrics.registerFont(TTFont(alias, font_path, subfontIndex=sub_idx))
                         else:
-                            pdfmetrics.registerFont(TTFont(font_name, font_path))
-                        registered_name = font_name
-                        logger.debug(f"月报PDF中文字体已注册: {font_name} <- {font_path}")
+                            pdfmetrics.registerFont(TTFont(alias, font_path))
+                        registered_name = alias
+                        _existing.add(alias)
+                        logger.debug(f"月报PDF中文字体已注册: alias={alias}, subIdx={sub_idx} <- {os.path.basename(font_path)}")
                         break
                     except Exception as fe:
-                        logger.debug(f"尝试注册字体 {font_path} 失败: {fe}")
+                        logger.debug(f"月报字体注册尝试失败 {font_path} idx={sub_idx}: {fe}")
                         continue
+                if registered_name != 'Helvetica':
+                    break
 
             doc = SimpleDocTemplate(filepath, pagesize=A4)
             styles = getSampleStyleSheet()
